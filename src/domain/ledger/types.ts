@@ -164,3 +164,12 @@ export type PlannerDelta = DeltaWindow & {
 export type LedgerSummary = Record<BehaviorStatus, number> & {
   pendingRevisions: number;
 };
+
+export type Cursors = Record<Role, number>;
+
+export type BehaviorFilter = {
+  statuses?: BehaviorStatus[];
+  includeRejected?: boolean;
+};
+
+export type RevisionEffect = 'draft_updated' | 'revision_pending';

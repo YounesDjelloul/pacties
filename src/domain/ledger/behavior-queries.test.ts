@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { approvableVersion, awaitsApproval, findBehavior, latestContent } from '@/domain/ledger/behavior-queries';
+import { approvableVersion, awaitsApproval, findBehavior, latestContent, revisionEffect, selectBehaviors } from '@/domain/ledger/behavior-queries';
 import { approve, behaviorIn, ledgerOf, propose, proposeMany, reject, revise, withStatus } from '@/test-support/ledger-script';
 import { transferOverDailyLimit } from '@/test-support/behavior-fixtures';
 
@@ -67,5 +67,42 @@ describe('latestContent', () => {
     expect(latestContent(behaviorIn(propose([], transferOverDailyLimit), 'B1')).description).toBe(
       'transfer over daily limit returns 429',
     );
+  });
+});
+
+describe('selectBehaviors', () => {
+  const events = () => revise(reject(approve(proposeMany([], 12), 'B2', 'B10'), 'B11', 'dup'), { id: 'B10', description: 'refund #10 in 14 days', reason: 'policy' });
+
+  it('hides rejected behaviors by default and keeps numeric order', () => {
+    const ids = selectBehaviors(ledgerOf(events()), {}).map((behavior) => behavior.id);
+    expect(ids).toEqual(['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B12']);
+  });
+
+  it('includes rejected behaviors when asked', () => {
+    expect(selectBehaviors(ledgerOf(events()), { includeRejected: true })).toHaveLength(12);
+  });
+
+  it('filters by several statuses', () => {
+    const ids = selectBehaviors(ledgerOf(events()), { statuses: ['approved', 'rejected'] }).map((behavior) => behavior.id);
+    expect(ids).toEqual(['B2', 'B10', 'B11']);
+  });
+
+  it('treats an empty status list as no status filter', () => {
+    expect(selectBehaviors(ledgerOf(events()), { statuses: [] })).toHaveLength(11);
+  });
+
+  it('returns nothing when no behavior has the requested status', () => {
+    expect(selectBehaviors(ledgerOf(events()), { statuses: ['passing'] })).toEqual([]);
+  });
+});
+
+describe('revisionEffect', () => {
+  it('is draft_updated for a planned behavior', () => {
+    expect(revisionEffect(behaviorIn(proposeMany([], 1), 'B1'))).toBe('draft_updated');
+  });
+
+  it.each(['approved', 'tested', 'passing', 'stale'] as const)('is revision_pending for a %s behavior', (status) => {
+    const ledger = withStatus(approve(proposeMany([], 1), 'B1'), 'B1', status);
+    expect(revisionEffect(ledger.behaviors[0]!)).toBe('revision_pending');
   });
 });
