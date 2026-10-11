@@ -173,3 +173,13 @@ export type BehaviorFilter = {
 };
 
 export type RevisionEffect = 'draft_updated' | 'revision_pending';
+
+export type Review = BehaviorContent & {
+  id: BehaviorId;
+  kind: 'proposal' | 'revision';
+  version: number;
+  fromVersion: number | null;
+  reason: string | null;
+  previousDescription: string | null;
+  contractDiff: ContractDiff | null;
+};

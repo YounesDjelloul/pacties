@@ -13,7 +13,7 @@ export function registerPlannerGetBehavior(server: McpServer, context: ServerCon
       inputSchema: { id: behaviorIdInput },
       annotations: { readOnlyHint: true },
     },
-    (input) => runTool(async () => ({ behavior: await getBehavior(context.project, toBehaviorId(input.id)) })),
+    (input) => runTool(async () => ({ behavior: await getBehavior(await context.project(), toBehaviorId(input.id)) })),
   );
 }
 
@@ -26,6 +26,6 @@ export function registerTesterGetBehavior(server: McpServer, context: ServerCont
       inputSchema: { id: behaviorIdInput },
       annotations: { readOnlyHint: true },
     },
-    (input) => runTool(async () => ({ behavior: await getApprovedBehavior(context.project, toBehaviorId(input.id)) })),
+    (input) => runTool(async () => ({ behavior: await getApprovedBehavior(await context.project(), toBehaviorId(input.id)) })),
   );
 }

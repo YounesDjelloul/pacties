@@ -1,5 +1,6 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { AppError } from '@/lib/errors';
+import type { BehaviorId } from '@/domain/ledger/types';
 
 export function toolResult(value: unknown): CallToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
@@ -22,4 +23,8 @@ export async function runTool(work: () => Promise<unknown>): Promise<CallToolRes
   } catch (error) {
     return toolError(error);
   }
+}
+
+export function approvalNextStep(id: BehaviorId): string {
+  return `Keep brainstorming if anything is open; once the developer gives the green light, ask them to run "pacties approve" (or "pacties approve ${id}"), and implement only after get_delta shows it approved`;
 }

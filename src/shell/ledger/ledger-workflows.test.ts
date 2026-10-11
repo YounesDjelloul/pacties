@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { approveBehaviors } from '@/shell/ledger/approve-behaviors';
 import { getPlannerDelta, getTesterDelta } from '@/shell/ledger/get-delta';
 import { proposeBehavior } from '@/shell/ledger/propose-behavior';
-import { getApprovedBehavior, getBehavior, listApprovedBehaviors, listBehaviors } from '@/shell/ledger/read-behaviors';
+import { getApprovedBehavior, getBehavior, getPendingReviews, listApprovedBehaviors, listBehaviors } from '@/shell/ledger/read-behaviors';
 import { rejectBehavior } from '@/shell/ledger/reject-behavior';
 import { updateBehavior } from '@/shell/ledger/update-behavior';
 import { resolveProject } from '@/shell/project/resolve-project';
@@ -117,10 +117,8 @@ describe('ledger workflows', () => {
     it('answers the tester with not found for a draft, exactly as for an unknown id', async () => {
       const project = await createTempProject(workspace());
       await proposeBehavior(project, transferOverDailyLimit, T1);
-      const draft = getApprovedBehavior(project, 'B1');
-      const unknown = getApprovedBehavior(project, 'B2');
-      await expect(draft).rejects.toThrow(new NotFoundError('B1 does not exist'));
-      await expect(unknown).rejects.toThrow(new NotFoundError('B2 does not exist'));
+      await expect(getApprovedBehavior(project, 'B1')).rejects.toThrow(new NotFoundError('B1 does not exist'));
+      await expect(getApprovedBehavior(project, 'B2')).rejects.toThrow(new NotFoundError('B2 does not exist'));
     });
 
     it('lists only approved behaviors for the tester', async () => {
@@ -130,6 +128,20 @@ describe('ledger workflows', () => {
       await approveBehaviors(project, [{ id: 'B2', version: 1 }], T2);
       expect((await listApprovedBehaviors(project)).map((view) => view.id)).toEqual(['B2']);
       expect(await getApprovedBehavior(project, 'B2')).not.toHaveProperty('pendingRevision');
+    });
+
+    it('reads what awaits the developer from the persisted log', async () => {
+      const project = await createTempProject(workspace());
+      await proposeBehavior(project, transferOverDailyLimit, T1);
+      await proposeBehavior(project, refundOutsideWindow, T1);
+      await approveBehaviors(project, [{ id: 'B1', version: 1 }], T2);
+      await updateBehavior(project, { id: 'B1', contract: { dependsOn: [] }, reason: 'stateless' }, T3);
+
+      const reopened = await resolveProject(path.join(workspace().root, 'Zahlungs Dienst é'), T3);
+      expect((await getPendingReviews(reopened)).map((review) => `${review.id}:${review.kind}:v${review.version}`)).toEqual([
+        'B1:revision:v2',
+        'B2:proposal:v1',
+      ]);
     });
   });
 

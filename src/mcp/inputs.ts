@@ -8,7 +8,7 @@ export const behaviorIdInput = z.string().describe('Behavior id, e.g. "B7"');
 
 export const interfaceInput = z
   .array(z.string())
-  .describe('Interface lines tests may rely on: routes, request/response shapes, function signatures. One line per entry, e.g. "POST /transfer { from_id, to_id, amount } -> 429 { error: \\"DAILY_LIMIT_EXCEEDED\\", remaining }"');
+  .describe('The public API tests will call, one line per entry, layer by layer: exported domain functions, shell boundary functions and entry points, with signatures and errors, e.g. "checkDailyLimit(totals: DailyTotals, amount: Money) -> Result<void, LimitExceeded>" or "POST /transfer { from_id, to_id, amount } -> 429 { error: \\"DAILY_LIMIT_EXCEEDED\\", remaining }"');
 
 export const dependsOnInput = z
   .array(z.string())

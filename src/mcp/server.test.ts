@@ -11,7 +11,7 @@ import type { Role } from '@/domain/ledger/types';
 const NOW = new Date('2026-10-25T00:59:59.999Z');
 
 async function connect(role: Role, project: Project): Promise<Client> {
-  const server = createPactiesServer(role, { project, now: () => NOW });
+  const server = createPactiesServer(role, { project: async () => project, now: () => NOW });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: `test-${role}`, version: '0.0.0' });
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -39,12 +39,22 @@ describe('pacties MCP server', () => {
     expect(names).toEqual(['get_behavior', 'get_delta', 'list_behaviors']);
   });
 
-  it('gives each role its own instructions', async () => {
-    const project = await createTempProject(workspace());
-    const planner = await connect('planner', project);
-    const tester = await connect('tester', project);
-    expect(planner.getInstructions()).toContain('pacties approve');
-    expect(tester.getInstructions()).toContain('do not read or infer the implementation');
+  it('tells the planner that approval is the green light, to implement only approved behaviors and never to write tests', async () => {
+    const planner = await connect('planner', await createTempProject(workspace()));
+    const instructions = planner.getInstructions();
+    expect(instructions).toContain('approval is that green light');
+    expect(instructions).toContain('Implement only approved behaviors, never planned drafts or pending revisions.');
+    expect(instructions).toContain('Never write tests of any kind');
+    expect(instructions).toContain('lists the public API the tests will call, layer by layer');
+  });
+
+  it("tells the tester to follow the repository's testing conventions and test only the public API it was given", async () => {
+    const tester = await connect('tester', await createTempProject(workspace()));
+    const instructions = tester.getInstructions();
+    expect(instructions).toContain("Follow the repository's testing conventions");
+    expect(instructions).toContain('calling only the public functions and entry points their contracts list');
+    expect(instructions).toContain('do not read or infer the implementation');
+    expect(instructions).not.toContain('green light');
   });
 
   it('proposes through the planner and hands the behavior to the tester once approved', async () => {
@@ -53,7 +63,7 @@ describe('pacties MCP server', () => {
     const tester = await connect('tester', project);
 
     const proposed = await call(planner, 'propose_behavior', transferOverDailyLimit as unknown as Record<string, unknown>);
-    expect(proposed.json()).toMatchObject({ behavior: { id: 'B1', status: 'planned' }, nextStep: 'Ask the developer to review it and run: pacties approve B1' });
+    expect(proposed.json()).toMatchObject({ behavior: { id: 'B1', status: 'planned' }, nextStep: expect.stringContaining('"pacties approve B1"') });
     expect((await call(tester, 'get_delta')).json().changes).toEqual([]);
 
     await approveBehaviors(project, [{ id: 'B1', version: 1 }], NOW);

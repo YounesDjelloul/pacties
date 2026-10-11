@@ -6,28 +6,32 @@ import { registerPlannerListBehaviors, registerTesterListBehaviors } from '@/mcp
 import { registerProposeBehavior } from '@/mcp/tools/propose-behavior';
 import { registerUpdateBehavior } from '@/mcp/tools/update-behavior';
 import { resolveProject } from '@/shell/project/resolve-project';
+import { PACTIES_VERSION } from '@/lib/config';
 import type { ServerContext } from '@/mcp/server-context';
 import type { Role } from '@/domain/ledger/types';
-
-const SERVER_VERSION = '0.1.0';
+import type { Project } from '@/domain/project/types';
 
 const PLANNER_INSTRUCTIONS = [
-  'You are the planner/implementer in a pacties project.',
-  'Agree each behavior with the developer, then record it with propose_behavior: a one-line description of observable behavior and the contract tests can rely on.',
-  'Only the developer can approve, by running "pacties approve <id>"; never claim a behavior is approved before get_delta or list_behaviors says so.',
+  'You are the planner and implementer in a pacties project.',
+  'Brainstorm with the developer until the feature is clear, and record each agreed behavior with propose_behavior; drafts are invisible to the tester, so revise them freely with update_behavior.',
+  'Each contract lists the public API the tests will call, layer by layer: exported domain functions, shell boundary functions and entry points such as routes or commands, with their signatures and errors. Never describe private helpers or function bodies.',
+  'When the developer gives the green light, ask them to run "pacties approve"; approval is that green light. Never claim a behavior is approved before get_delta or list_behaviors says so.',
+  'Implement only approved behaviors, never planned drafts or pending revisions.',
+  'Never write tests of any kind: every test belongs to the tester.',
   'Call get_delta at the start of every turn to learn approvals, rejections and changes.',
   'If tests fail because the contract itself is wrong, change it with update_behavior instead of coding around it.',
 ].join(' ');
 
 const TESTER_INSTRUCTIONS = [
   'You are the tester in a pacties project.',
-  'Write tests only from approved behaviors and their contracts; do not read or infer the implementation.',
-  'Call get_delta at the start of every turn and update existing tests for revised behaviors instead of rewriting them.',
+  "Follow the repository's testing conventions (CLAUDE.md, ARCHITECTURE.md, rules files) for test layers, locations and fixtures.",
+  'Write tests only from approved behaviors, calling only the public functions and entry points their contracts list; do not read or infer the implementation.',
+  'Call get_delta at the start of every turn: write tests for newly approved behaviors and update existing tests for revised ones instead of rewriting them.',
 ].join(' ');
 
 export function createPactiesServer(role: Role, context: ServerContext): McpServer {
   const server = new McpServer(
-    { name: `pacties-${role}`, version: SERVER_VERSION },
+    { name: `pacties-${role}`, version: PACTIES_VERSION },
     { instructions: role === 'planner' ? PLANNER_INSTRUCTIONS : TESTER_INSTRUCTIONS },
   );
 
@@ -47,7 +51,14 @@ export function createPactiesServer(role: Role, context: ServerContext): McpServ
 }
 
 export async function startMcpServer(role: Role, repoPath: string): Promise<void> {
-  const project = await resolveProject(repoPath, new Date());
+  let resolving: Promise<Project> | null = null;
+  const project = () => {
+    resolving ??= resolveProject(repoPath, new Date()).catch((error: unknown) => {
+      resolving = null;
+      throw error;
+    });
+    return resolving;
+  };
   const server = createPactiesServer(role, { project, now: () => new Date() });
   await server.connect(new StdioServerTransport());
 }

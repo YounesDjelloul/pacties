@@ -26,3 +26,8 @@ async function git(cwd: string, args: string[]): Promise<string | null> {
     return null;
   }
 }
+
+export async function readRepoRoot(repoPath: string): Promise<string | null> {
+  const topLevel = await git(repoPath, ['rev-parse', '--show-toplevel']);
+  return topLevel === null ? null : fs.realpath(topLevel.trim());
+}

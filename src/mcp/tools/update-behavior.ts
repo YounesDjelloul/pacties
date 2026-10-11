@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { behaviorIdInput, dependsOnInput, interfaceInput, toBehaviorId } from '@/mcp/inputs';
-import { runTool } from '@/mcp/tool-result';
+import { approvalNextStep, runTool } from '@/mcp/tool-result';
 import { updateBehavior } from '@/shell/ledger/update-behavior';
 import type { ServerContext } from '@/mcp/server-context';
 
@@ -26,8 +26,8 @@ export function registerUpdateBehavior(server: McpServer, context: ServerContext
     },
     (input) =>
       runTool(async () => {
-        const outcome = await updateBehavior(context.project, { ...input, id: toBehaviorId(input.id) }, context.now());
-        return { ...outcome, nextStep: `Ask the developer to review it and run: pacties approve ${outcome.behavior.id}` };
+        const outcome = await updateBehavior(await context.project(), { ...input, id: toBehaviorId(input.id) }, context.now());
+        return { ...outcome, nextStep: approvalNextStep(outcome.behavior.id) };
       }),
   );
 }

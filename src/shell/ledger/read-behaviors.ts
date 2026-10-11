@@ -1,9 +1,10 @@
 import { findBehavior, selectBehaviors } from '@/domain/ledger/behavior-queries';
 import { summarizeLedger } from '@/domain/ledger/summarize-ledger';
 import { testerView } from '@/domain/ledger/tester-view';
-import { NotFoundError } from '@/lib/errors';
+import { buildReview, pendingReviews } from '@/domain/ledger/review';
+import { NotFoundError, ValidationError } from '@/lib/errors';
 import { loadLedger } from '@/shell/ledger/load-ledger';
-import type { Behavior, BehaviorFilter, BehaviorId, LedgerSummary, TesterBehaviorView } from '@/domain/ledger/types';
+import type { Behavior, BehaviorFilter, BehaviorId, LedgerSummary, Review, TesterBehaviorView } from '@/domain/ledger/types';
 import type { Project } from '@/domain/project/types';
 
 export type BehaviorListing = {
@@ -37,4 +38,24 @@ export async function getApprovedBehavior(project: Project, id: BehaviorId): Pro
     throw new NotFoundError(`${id} does not exist`);
   }
   return view;
+}
+
+export async function getReviews(project: Project, ids: BehaviorId[]): Promise<Review[]> {
+  const { ledger } = await loadLedger(project);
+  return ids.map((id) => {
+    const behavior = findBehavior(ledger, id);
+    if (behavior === undefined) {
+      throw new NotFoundError(`${id} does not exist`);
+    }
+    const review = buildReview(behavior);
+    if (review === null) {
+      throw new ValidationError(`${id} has nothing awaiting approval`);
+    }
+    return review;
+  });
+}
+
+export async function getPendingReviews(project: Project): Promise<Review[]> {
+  const { ledger } = await loadLedger(project);
+  return pendingReviews(ledger);
 }

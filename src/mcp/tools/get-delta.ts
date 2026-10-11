@@ -12,7 +12,7 @@ export function registerPlannerGetDelta(server: McpServer, context: ServerContex
       description: 'What changed since your last call: behaviors added or revised, pending revisions, and the developer\'s approvals and rejections with reasons. Call it at the start of every turn.',
       inputSchema: { peek: peekInput },
     },
-    (input) => runTool(() => getPlannerDelta(context.project, { peek: input.peek ?? false })),
+    (input) => runTool(async () => getPlannerDelta(await context.project(), { peek: input.peek ?? false })),
   );
 }
 
@@ -24,6 +24,6 @@ export function registerTesterGetDelta(server: McpServer, context: ServerContext
       description: 'Approved behaviors added or revised since your last call, with a line-level contract diff. Call it at the start of every turn and update the affected tests.',
       inputSchema: { peek: peekInput },
     },
-    (input) => runTool(() => getTesterDelta(context.project, { peek: input.peek ?? false })),
+    (input) => runTool(async () => getTesterDelta(await context.project(), { peek: input.peek ?? false })),
   );
 }

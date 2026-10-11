@@ -18,8 +18,8 @@ export function registerPlannerListBehaviors(server: McpServer, context: ServerC
       annotations: { readOnlyHint: true },
     },
     (input) =>
-      runTool(() =>
-        listBehaviors(context.project, {
+      runTool(async () =>
+        listBehaviors(await context.project(), {
           ...(input.status === undefined ? {} : { statuses: input.status }),
           ...(input.includeRejected === undefined ? {} : { includeRejected: input.includeRejected }),
         }),
@@ -35,6 +35,6 @@ export function registerTesterListBehaviors(server: McpServer, context: ServerCo
       description: 'List every approved behavior you must cover with tests, with its description, contract, version and status.',
       annotations: { readOnlyHint: true },
     },
-    () => runTool(async () => ({ behaviors: await listApprovedBehaviors(context.project) })),
+    () => runTool(async () => ({ behaviors: await listApprovedBehaviors(await context.project()) })),
   );
 }
