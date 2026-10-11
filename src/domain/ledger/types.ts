@@ -107,3 +107,60 @@ export type LedgerFailure = {
   kind: 'not_found' | 'invalid' | 'conflict';
   message: string;
 };
+
+export type TesterBehaviorView = BehaviorContent & {
+  id: BehaviorId;
+  version: number;
+  status: BehaviorStatus;
+};
+
+export type ContractDiff = {
+  interfaceAdded: string[];
+  interfaceRemoved: string[];
+  dependsOnAdded: string[];
+  dependsOnRemoved: string[];
+};
+
+export type BehaviorChangeKind = 'added' | 'revised' | 'status_changed' | 'revision_pending';
+
+export type BehaviorChange = BehaviorContent & {
+  id: BehaviorId;
+  change: BehaviorChangeKind;
+  fromVersion: number | null;
+  version: number;
+  fromStatus: BehaviorStatus | null;
+  status: BehaviorStatus;
+  descriptionChanged: boolean;
+  contractDiff: ContractDiff;
+};
+
+export type PlannerBehaviorChange = BehaviorChange & {
+  pendingRevision: PendingRevision | null;
+};
+
+export type Decision = {
+  id: BehaviorId;
+  decision: 'approved' | 'rejected';
+  version: number;
+  reason: string | null;
+  at: string;
+};
+
+type DeltaWindow = {
+  fromSeq: number;
+  toSeq: number;
+  resync: boolean;
+};
+
+export type TesterDelta = DeltaWindow & {
+  changes: BehaviorChange[];
+};
+
+export type PlannerDelta = DeltaWindow & {
+  changes: PlannerBehaviorChange[];
+  decisions: Decision[];
+};
+
+export type LedgerSummary = Record<BehaviorStatus, number> & {
+  pendingRevisions: number;
+};
