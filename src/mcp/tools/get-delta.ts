@@ -9,7 +9,8 @@ export function registerPlannerGetDelta(server: McpServer, context: ServerContex
     'get_delta',
     {
       title: 'Get delta',
-      description: 'What changed since your last call: behaviors added or revised, pending revisions, and the developer\'s approvals and rejections with reasons. Call it at the start of every turn.',
+      description:
+        "What changed since your last call: behaviors added or revised, pending revisions, the developer's approvals and rejections with reasons, test results per behavior, contract issues from the tester, and test runs that were refused, blocked or crashed. Call it at the start of every turn.",
       inputSchema: { peek: peekInput },
     },
     (input) => runTool(async () => getPlannerDelta(await context.project(), { peek: input.peek ?? false })),

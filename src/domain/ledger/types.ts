@@ -1,4 +1,4 @@
-import type { BEHAVIOR_STATUSES, ROLES } from '@/domain/ledger/constants';
+import type { BEHAVIOR_STATUSES, ROLES, RUN_STATUSES } from '@/domain/ledger/constants';
 
 export type BehaviorId = `B${number}`;
 
@@ -47,9 +47,20 @@ export type Behavior = BehaviorContent & {
   openIssues: ContractIssue[];
 };
 
+export type RunStatus = (typeof RUN_STATUSES)[number];
+
+export type RunRecord = {
+  runId: string;
+  role: Role;
+  status: RunStatus;
+  paths: string[];
+  at: string;
+};
+
 export type Ledger = {
   behaviors: Behavior[];
   headSeq: number;
+  lastRun: RunRecord | null;
 };
 
 type EventBase = {
@@ -57,6 +68,17 @@ type EventBase = {
   at: string;
   actor: Actor;
   behaviorId: BehaviorId;
+};
+
+export type TestRunFinishedEvent = {
+  type: 'test_run_finished';
+  seq: number;
+  at: string;
+  actor: 'pacties';
+  runId: string;
+  role: Role;
+  status: RunStatus;
+  paths: string[];
 };
 
 export type BehaviorProposedEvent = EventBase & {
@@ -107,7 +129,10 @@ export type LedgerEvent =
   | BehaviorRejectedEvent
   | TestsSubmittedEvent
   | TestResultsRecordedEvent
-  | ContractIssueReportedEvent;
+  | ContractIssueReportedEvent
+  | TestRunFinishedEvent;
+
+export type BehaviorEvent = Exclude<LedgerEvent, TestRunFinishedEvent>;
 
 export type ContractInput = {
   interface: string[];
@@ -155,6 +180,13 @@ export type TestRunRecording = {
 export type RecordedResults = {
   events: TestResultsRecordedEvent[];
   unsubmitted: BehaviorId[];
+};
+
+export type RunFinish = {
+  runId: string;
+  role: Role;
+  status: RunStatus;
+  paths: string[];
 };
 
 export type ContractIssueInput = {
@@ -237,6 +269,7 @@ export type PlannerDelta = DeltaWindow & {
   decisions: Decision[];
   testResults: TestResultNotice[];
   contractIssues: ContractIssueNotice[];
+  stoppedRuns: RunRecord[];
 };
 
 export type LedgerSummary = Record<BehaviorStatus, number> & {

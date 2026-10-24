@@ -5,11 +5,11 @@ import { describe, expect, it } from 'vitest';
 import { approveBehaviors } from '@/shell/ledger/approve-behaviors';
 import { getPlannerDelta } from '@/shell/ledger/get-delta';
 import { proposeBehavior } from '@/shell/ledger/propose-behavior';
-import { getBehavior } from '@/shell/ledger/read-behaviors';
+import { getBehavior, listBehaviors } from '@/shell/ledger/read-behaviors';
 import { reportContractIssue } from '@/shell/testing/report-contract-issue';
 import { runTestsForPlanner, runTestsForTester } from '@/shell/testing/run-tests';
 import { submitTests } from '@/shell/testing/submit-tests';
-import { syncWorkspace, testerWorkspaceDir } from '@/shell/testing/sync-workspace';
+import { listConflicts, resolveConflict, syncWorkspace, testerWorkspaceDir } from '@/shell/testing/sync-workspace';
 import { loadTestPolicy } from '@/shell/testing/test-policy';
 import { ConflictError, ValidationError } from '@/lib/errors';
 import { refundOutsideWindow, transferOverDailyLimit } from '@/test-support/behavior-fixtures';
@@ -144,6 +144,8 @@ describe('testing workflows', () => {
       const report = await runTestsForTester(project, T2);
       expect(report.status).toBe('blocked');
       expect(report.sync.conflicts).toEqual(['src/features/refund/__tests__/refund.test.ts']);
+      const delta = await getPlannerDelta(project, { peek: true });
+      expect(delta.stoppedRuns).toMatchObject([{ runId: report.runId, role: 'tester', status: 'blocked', paths: ['src/features/refund/__tests__/refund.test.ts'] }]);
       expect(report.tests).toEqual([]);
       expect(await fs.readFile(path.join(project.repoRoot, 'src/features/refund/__tests__/refund.test.ts'), 'utf8')).toContain('implementer');
     });
@@ -163,6 +165,7 @@ describe('testing workflows', () => {
       expect(tester.status).toBe('refused');
       expect(tester.sync.refused).toEqual([{ path: 'src/sneaky.test.ts', line: 1, rule: 'imports a file-system or process module' }]);
       expect(await exists(project.repoRoot, 'src/sneaky.test.ts')).toBe(false);
+      expect((await listBehaviors(project, {})).lastRun).toMatchObject({ status: 'refused', paths: ['src/sneaky.test.ts'] });
 
       const planner = await runTestsForPlanner(project, T2);
       expect(planner.status).toBe('completed');
@@ -203,6 +206,61 @@ describe('testing workflows', () => {
       const [first, second] = await Promise.all([runTestsForPlanner(project, T2), runTestsForTester(project, T2)]);
       expect([first.status, second.status]).toEqual(['completed', 'completed']);
       expect(first.runId).not.toBe(second.runId);
+    });
+  });
+
+  describe('conflicts', () => {
+    const REFUND_TEST = 'src/features/refund/__tests__/refund.test.ts';
+
+    async function conflictedProject() {
+      const project = await createTempProject(workspace());
+      await repoWithTenBehaviors(project);
+      await usePolicy(project);
+      await syncWorkspace(project);
+      await writeFile(project.repoRoot, REFUND_TEST, "it('[B2] edited by the implementer', () => {})\r\n");
+      await writeFile(testerWorkspaceDir(project), REFUND_TEST, "it('[B2] edited by the tester', () => {})\n");
+      return project;
+    }
+
+    it('lists the conflicting test files without changing anything', async () => {
+      const project = await conflictedProject();
+      expect(await listConflicts(project)).toEqual([REFUND_TEST]);
+      expect(await listConflicts(project)).toEqual([REFUND_TEST]);
+    });
+
+    it('keeps the tester version, copies it into the repo, and lets the next run go through', async () => {
+      const project = await conflictedProject();
+      expect(await resolveConflict(project, REFUND_TEST, 'tester')).toEqual({ copyFrom: 'tester', removeFrom: null, baseHash: expect.any(String) });
+      expect(await fs.readFile(path.join(project.repoRoot, REFUND_TEST), 'utf8')).toContain('edited by the tester');
+      expect(await listConflicts(project)).toEqual([]);
+      expect((await runTestsForTester(project, T2)).status).toBe('completed');
+    });
+
+    it('keeps the repo version and copies it into the workspace', async () => {
+      const project = await conflictedProject();
+      await resolveConflict(project, REFUND_TEST, 'repo');
+      expect(await fs.readFile(path.join(testerWorkspaceDir(project), REFUND_TEST), 'utf8')).toBe("it('[B2] edited by the implementer', () => {})\r\n");
+      expect(await listConflicts(project)).toEqual([]);
+    });
+
+    it('keeps a deletion made by the tester by deleting the repo copy', async () => {
+      const project = await conflictedProject();
+      await fs.rm(path.join(testerWorkspaceDir(project), REFUND_TEST));
+      await resolveConflict(project, REFUND_TEST, 'tester');
+      expect(await exists(project.repoRoot, REFUND_TEST)).toBe(false);
+      expect(await listConflicts(project)).toEqual([]);
+    });
+
+    it('refuses to copy a tester version that reads files into the repo', async () => {
+      const project = await conflictedProject();
+      await writeFile(testerWorkspaceDir(project), REFUND_TEST, "import { readFileSync } from 'node:fs';\nit('[B2] leaks', () => {})\n");
+      await expect(resolveConflict(project, REFUND_TEST, 'tester')).rejects.toThrow(/imports a file-system or process module \(line 1\)/u);
+      expect(await fs.readFile(path.join(project.repoRoot, REFUND_TEST), 'utf8')).toContain('implementer');
+    });
+
+    it('refuses a file that is not in conflict', async () => {
+      const project = await conflictedProject();
+      await expect(resolveConflict(project, 'AGENTS.md', 'repo')).rejects.toThrow(new ValidationError('AGENTS.md is not in conflict; run "pacties conflicts" to list the files that are'));
     });
   });
 

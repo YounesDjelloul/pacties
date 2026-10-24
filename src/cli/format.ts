@@ -1,4 +1,4 @@
-import type { Behavior, ContractDiff, LedgerSummary, Review } from '@/domain/ledger/types';
+import type { Behavior, ContractDiff, LedgerSummary, Review, RunRecord } from '@/domain/ledger/types';
 
 export function formatBehaviorLine(behavior: Behavior): string {
   const pending = behavior.pendingRevision === null ? '' : `  (revision v${behavior.pendingRevision.version} pending)`;
@@ -62,4 +62,19 @@ function formatDiff(diff: ContractDiff): string[] {
     ...diff.dependsOnRemoved.map((line) => `  - depends on: ${line}`),
     ...diff.dependsOnAdded.map((line) => `  + depends on: ${line}`),
   ];
+}
+
+export function formatRunWarning(run: RunRecord | null): string | null {
+  if (run === null || run.status === 'completed') {
+    return null;
+  }
+  const by = `the last ${run.role} test run (${run.at})`;
+  switch (run.status) {
+    case 'blocked':
+      return `⚠ ${by} was blocked: ${run.paths.join(', ')} changed both in the repo and in the tester sandbox. Run "pacties conflicts".`;
+    case 'refused':
+      return `⚠ ${by} was refused: ${run.paths.join(', ')} read files, spawn processes or print source, so they were not copied into the repo.`;
+    case 'crashed':
+      return `⚠ ${by} crashed before reporting results; the planner's run_tests shows the output.`;
+  }
 }

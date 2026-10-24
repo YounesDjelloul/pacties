@@ -177,7 +177,7 @@ describe('computePlannerDelta', () => {
 
   it('is empty with no decisions when the cursor is at the head', () => {
     const events = transferApprovedAfterNineRefunds();
-    expect(unwrap(computePlannerDelta(events, 11))).toEqual({ fromSeq: 11, toSeq: 11, resync: false, changes: [], decisions: [], testResults: [], contractIssues: [] });
+    expect(unwrap(computePlannerDelta(events, 11))).toEqual({ fromSeq: 11, toSeq: 11, resync: false, changes: [], decisions: [], testResults: [], contractIssues: [], stoppedRuns: [] });
   });
 
   it('sees a different delta than the tester over the same events and cursor', () => {
@@ -230,5 +230,27 @@ describe('deltas with test events', () => {
     expect(delta.changes.map((change) => [change.id, change.change, change.openIssues.map((issue) => issue.problem)])).toEqual([
       ['B10', 'issues_changed', ['remaining is not defined once the limit is hit']],
     ]);
+  });
+});
+
+describe('stopped runs in the planner delta', () => {
+  it('lists refused, blocked and crashed runs since the cursor, but not completed ones', () => {
+    const events = transferApprovedAfterNineRefunds();
+    const run = (seq: number, runId: string, status: 'completed' | 'blocked' | 'refused' | 'crashed'): LedgerEvent => ({
+      type: 'test_run_finished',
+      seq,
+      at: '2026-10-25T00:00:00.000Z',
+      actor: 'pacties',
+      runId,
+      role: 'planner',
+      status,
+      paths: status === 'completed' ? [] : ['src/limit.test.ts'],
+    });
+    const withRuns = [...events, run(12, 'run-1', 'blocked'), run(13, 'run-2', 'completed'), run(14, 'run-3', 'crashed'), run(15, 'run-4', 'refused')];
+    expect(unwrap(computePlannerDelta(withRuns, 12)).stoppedRuns.map((stopped) => [stopped.runId, stopped.status])).toEqual([
+      ['run-3', 'crashed'],
+      ['run-4', 'refused'],
+    ]);
+    expect(unwrap(computeTesterDelta(withRuns, 0)).changes.map((change) => change.id)).toEqual(['B10']);
   });
 });

@@ -311,6 +311,41 @@ describe('foldLedger with test events', () => {
   });
 });
 
+describe('foldLedger with run events', () => {
+  const finished = (seq: number, runId: string, status: 'completed' | 'blocked' | 'refused' | 'crashed', paths: string[] = []): LedgerEvent => ({
+    type: 'test_run_finished',
+    seq,
+    at: AT,
+    actor: 'pacties',
+    runId,
+    role: 'tester',
+    status,
+    paths,
+  });
+
+  it('keeps the latest run and leaves behaviors untouched', () => {
+    const events = proposeMany([], 10);
+    const withRuns = [
+      ...events,
+      finished(11, 'run-a', 'blocked', ['src/__tests__/zahlung é.test.ts']),
+      finished(12, 'run-b', 'completed'),
+      finished(13, 'run-c', 'refused', ['e2e/b10.spec.ts']),
+    ];
+    const ledger = ledgerOf(withRuns);
+    expect(ledger.lastRun).toEqual({ runId: 'run-c', role: 'tester', status: 'refused', paths: ['e2e/b10.spec.ts'], at: AT });
+    expect(ledger.headSeq).toBe(13);
+    expect(ledger.behaviors).toEqual(ledgerOf(events).behaviors);
+  });
+
+  it('starts with no run', () => {
+    expect(ledgerOf(proposeMany([], 2)).lastRun).toBeNull();
+  });
+
+  it('still checks seq order for run events', () => {
+    expect(foldLedger([...proposeMany([], 2), finished(4, 'run-x', 'completed')]).ok).toBe(false);
+  });
+});
+
 describe('applyEvent', () => {
   it('returns a new ledger and leaves the input ledger untouched', () => {
     const ledger = ledgerOf(proposeMany([], 2));

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { Command, CommanderError, Option } from 'commander';
 import { approveCommand } from '@/cli/commands/approve';
+import { conflictsCommand, resolveCommand } from '@/cli/commands/conflicts';
 import { testerGuardCommand } from '@/cli/commands/hook';
 import { initCommand } from '@/cli/commands/init';
 import { listCommand } from '@/cli/commands/list';
@@ -75,6 +76,20 @@ function buildProgram(io: CliIo, exit: { code: number }): Command {
     .requiredOption('--reason <text>', 'why, shown to the planner')
     .addOption(repoOption())
     .action((id: string, options: { reason: string; repo: string }) => rejectCommand(io, id, options.reason, repoPath(options)));
+
+  program
+    .command('conflicts')
+    .description('list test files changed both in the repo and in the tester sandbox')
+    .addOption(repoOption())
+    .action((options: { repo: string }) => conflictsCommand(io, repoPath(options)));
+
+  program
+    .command('resolve')
+    .description('settle a test-file conflict by keeping one side (developer only, interactive)')
+    .argument('<file>', 'repo-relative path, as "pacties conflicts" prints it')
+    .requiredOption('--keep <side>', 'repo or tester')
+    .addOption(repoOption())
+    .action((file: string, options: { keep: string; repo: string }) => resolveCommand(io, file, options.keep, repoPath(options)));
 
   program
     .command('tester')

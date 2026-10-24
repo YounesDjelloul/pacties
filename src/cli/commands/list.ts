@@ -1,5 +1,5 @@
 import { BEHAVIOR_STATUSES } from '@/domain/ledger/constants';
-import { formatBehaviorLine, formatSummary } from '@/cli/format';
+import { formatBehaviorLine, formatRunWarning, formatSummary } from '@/cli/format';
 import { ValidationError } from '@/lib/errors';
 import { listBehaviors } from '@/shell/ledger/read-behaviors';
 import { resolveProject } from '@/shell/project/resolve-project';
@@ -23,7 +23,10 @@ export async function listCommand(io: CliIo, options: ListOptions, repoPath: str
     io.out(JSON.stringify(listing, null, 2));
     return;
   }
-  io.out([`${project.name}  ${formatSummary(listing.summary)}`, '', ...listing.behaviors.map(formatBehaviorLine)].join('\n'));
+  const warning = formatRunWarning(listing.lastRun);
+  io.out(
+    [`${project.name}  ${formatSummary(listing.summary)}`, ...(warning === null ? [] : [warning]), '', ...listing.behaviors.map(formatBehaviorLine)].join('\n'),
+  );
 }
 
 function parseStatuses(raw: string): BehaviorStatus[] {

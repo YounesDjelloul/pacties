@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planSync } from '@/domain/testing/plan-sync';
+import { planConflictResolution, planSync } from '@/domain/testing/plan-sync';
 import { DEFAULT_TEST_GLOBS } from '@/domain/testing/test-policy';
 import type { SyncSnapshot } from '@/domain/testing/types';
 
@@ -78,5 +78,28 @@ describe('planSync', () => {
     });
     expect(result.push).toEqual([]);
     expect(result.notPushed.sort()).toEqual(['../outside.test.ts', 'node_modules/pkg/a.test.ts', 'src/./a.test.ts', 'src/features/transfer/domain/daily-limit.ts']);
+  });
+});
+
+describe('planConflictResolution', () => {
+  const conflicted = { repo: { [TEST]: 'r2' }, workspace: { [TEST]: 'w2' }, base: { [TEST]: 'h1' } };
+
+  it('keeps the repo version by copying it into the workspace', () => {
+    expect(planConflictResolution(TEST, 'repo', conflicted, policy)).toEqual({ ok: true, value: { copyFrom: 'repo', removeFrom: null, baseHash: 'r2' } });
+  });
+
+  it('keeps the tester version by copying it into the repo', () => {
+    expect(planConflictResolution(TEST, 'tester', conflicted, policy)).toEqual({ ok: true, value: { copyFrom: 'tester', removeFrom: null, baseHash: 'w2' } });
+  });
+
+  it('keeps a deletion by removing the file on the other side', () => {
+    const deletedByTester = { repo: { [TEST]: 'r2' }, workspace: {}, base: { [TEST]: 'h1' } };
+    expect(planConflictResolution(TEST, 'tester', deletedByTester, policy)).toEqual({ ok: true, value: { copyFrom: null, removeFrom: 'repo', baseHash: null } });
+    expect(planConflictResolution(TEST, 'repo', deletedByTester, policy)).toEqual({ ok: true, value: { copyFrom: 'repo', removeFrom: null, baseHash: 'r2' } });
+  });
+
+  it('refuses a path that is not in conflict', () => {
+    const result = planConflictResolution(OTHER_TEST, 'repo', { ...conflicted, repo: { ...conflicted.repo, [OTHER_TEST]: 'o1' }, workspace: { ...conflicted.workspace, [OTHER_TEST]: 'o1' } }, policy);
+    expect(result).toEqual({ ok: false, error: 'src/b10.test.ts is not in conflict; run "pacties conflicts" to list the files that are' });
   });
 });

@@ -1,5 +1,7 @@
 import { isMirroredPath, isTestPath } from '@/domain/testing/test-policy';
-import type { FileHashes, SyncPlan, SyncSnapshot, TestPolicy } from '@/domain/testing/types';
+import { fail, ok } from '@/domain/shared/result';
+import type { Result } from '@/domain/shared/types';
+import type { ConflictResolution, ConflictSide, FileHashes, SyncPlan, SyncSnapshot, TestPolicy } from '@/domain/testing/types';
 
 export function planSync(snapshot: SyncSnapshot, policy: TestPolicy): SyncPlan {
   const plan: SyncPlan = { pull: [], push: [], deleteFromWorkspace: [], deleteFromRepo: [], conflicts: [], notPushed: [], base: {} };
@@ -16,6 +18,18 @@ export function planSync(snapshot: SyncSnapshot, policy: TestPolicy): SyncPlan {
   }
 
   return plan;
+}
+
+export function planConflictResolution(path: string, keep: ConflictSide, snapshot: SyncSnapshot, policy: TestPolicy): Result<ConflictResolution> {
+  if (!planSync(snapshot, policy).conflicts.includes(path)) {
+    return fail(`${path} is not in conflict; run "pacties conflicts" to list the files that are`);
+  }
+  const kept = keep === 'repo' ? snapshot.repo[path] : snapshot.workspace[path];
+  const other: ConflictSide = keep === 'repo' ? 'tester' : 'repo';
+  if (kept === undefined) {
+    return ok({ copyFrom: null, removeFrom: other, baseHash: null });
+  }
+  return ok({ copyFrom: keep, removeFrom: null, baseHash: kept });
 }
 
 function planPath(path: string, snapshot: SyncSnapshot, pushable: boolean, plan: SyncPlan): void {

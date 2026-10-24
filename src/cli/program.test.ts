@@ -220,6 +220,42 @@ describe('pacties CLI', () => {
     });
   });
 
+  it('warns in list when the last test run was blocked', async () => {
+    const project = await createTempProject(workspace());
+    await proposeBehavior(project, transferOverDailyLimit, T);
+    await fs.appendFile(
+      path.join(project.dir, 'events.jsonl'),
+      `${JSON.stringify({ type: 'test_run_finished', seq: 2, at: '2026-10-25T01:00:00.000Z', actor: 'pacties', runId: 'run-9', role: 'tester', status: 'blocked', paths: ['src/zahlung é.test.ts'] })}\n`,
+    );
+    const io = fakeCliIo(repoOf(), { interactive: false });
+    expect(await runCli(['list'], io)).toBe(0);
+    expect(io.output()).toContain('⚠ the last tester test run (2026-10-25T01:00:00.000Z) was blocked: src/zahlung é.test.ts changed both in the repo and in the tester sandbox. Run "pacties conflicts".');
+  });
+
+  describe('conflicts and resolve', () => {
+    it('says when nothing is in conflict', async () => {
+      const project = await createTempProject(workspace());
+      await fs.writeFile(path.join(project.repoRoot, 'package.json'), '{ "devDependencies": { "vitest": "^5.0.3" } }');
+      const io = fakeCliIo(repoOf(), { interactive: false });
+      expect(await runCli(['conflicts'], io)).toBe(0);
+      expect(io.output()).toBe('No conflicts: every test file is in sync between the repo and the tester sandbox.');
+    });
+
+    it('only resolves in an interactive terminal, so agents cannot pick the winner', async () => {
+      await createTempProject(workspace());
+      const io = fakeCliIo(repoOf(), { interactive: false });
+      expect(await runCli(['resolve', 'src/a.test.ts', '--keep', 'repo'], io)).toBe(1);
+      expect(io.errors()).toContain('"pacties resolve" is the developer\'s decision');
+    });
+
+    it('rejects an unknown side', async () => {
+      await createTempProject(workspace());
+      const io = fakeCliIo(repoOf(), { interactive: true });
+      expect(await runCli(['resolve', 'src/a.test.ts', '--keep', 'both'], io)).toBe(1);
+      expect(io.errors()).toBe('pacties: --keep must be "repo" or "tester", not "both"');
+    });
+  });
+
   describe('hook tester-guard', () => {
     const guardFileIn = async (guarded: string[]) => {
       const file = path.join(workspace().root, 'session ✦', 'guard.json');

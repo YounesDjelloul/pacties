@@ -14,6 +14,7 @@ import type {
   PendingRevision,
   PlannerBehaviorChange,
   PlannerDelta,
+  RunRecord,
   TestResultNotice,
   TesterBehaviorView,
   TesterDelta,
@@ -69,6 +70,7 @@ export function computePlannerDelta(events: LedgerEvent[], cursor: number): Resu
     decisions: inputs.since.flatMap(toDecision),
     testResults: inputs.since.flatMap(toTestResultNotice),
     contractIssues: inputs.since.flatMap(toContractIssueNotice),
+    stoppedRuns: inputs.since.flatMap(toStoppedRun),
   });
 }
 
@@ -161,4 +163,11 @@ function toContractIssueNotice(event: LedgerEvent): ContractIssueNotice[] {
     return [];
   }
   return [{ id: event.behaviorId, version: event.version, problem: event.problem, at: event.at }];
+}
+
+function toStoppedRun(event: LedgerEvent): RunRecord[] {
+  if (event.type !== 'test_run_finished' || event.status === 'completed') {
+    return [];
+  }
+  return [{ runId: event.runId, role: event.role, status: event.status, paths: event.paths, at: event.at }];
 }

@@ -5,6 +5,7 @@ import type { Result } from '@/domain/shared/types';
 import type {
   Behavior,
   BehaviorApprovedEvent,
+  BehaviorEvent,
   BehaviorProposedEvent,
   BehaviorRejectedEvent,
   BehaviorRevisedEvent,
@@ -16,7 +17,7 @@ import type {
   TestsSubmittedEvent,
 } from '@/domain/ledger/types';
 
-export const EMPTY_LEDGER: Ledger = { behaviors: [], headSeq: 0 };
+export const EMPTY_LEDGER: Ledger = { behaviors: [], headSeq: 0, lastRun: null };
 
 export function foldLedger(events: LedgerEvent[]): Result<Ledger> {
   let ledger = EMPTY_LEDGER;
@@ -38,6 +39,10 @@ export function applyEvent(ledger: Ledger, event: LedgerEvent): Result<Ledger> {
   if (event.type === 'behavior_proposed') {
     return applyProposal(ledger, event);
   }
+  if (event.type === 'test_run_finished') {
+    const { runId, role, status, paths, at } = event;
+    return ok({ ...ledger, headSeq: event.seq, lastRun: { runId, role, status, paths, at } });
+  }
 
   const behavior = findBehavior(ledger, event.behaviorId);
   if (behavior === undefined) {
@@ -50,6 +55,7 @@ export function applyEvent(ledger: Ledger, event: LedgerEvent): Result<Ledger> {
   }
 
   return ok({
+    ...ledger,
     behaviors: ledger.behaviors.map((existing) => (existing.id === behavior.id ? updated.value : existing)),
     headSeq: event.seq,
   });
@@ -72,10 +78,10 @@ function applyProposal(ledger: Ledger, event: BehaviorProposedEvent): Result<Led
     openIssues: [],
   };
 
-  return ok({ behaviors: [...ledger.behaviors, behavior], headSeq: event.seq });
+  return ok({ ...ledger, behaviors: [...ledger.behaviors, behavior], headSeq: event.seq });
 }
 
-function applyToBehavior(behavior: Behavior, event: Exclude<LedgerEvent, BehaviorProposedEvent>): Result<Behavior> {
+function applyToBehavior(behavior: Behavior, event: Exclude<BehaviorEvent, BehaviorProposedEvent>): Result<Behavior> {
   if (behavior.status === 'rejected') {
     return fail(`Event ${event.seq} changes ${behavior.id}, which was rejected`);
   }

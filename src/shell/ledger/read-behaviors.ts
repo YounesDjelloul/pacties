@@ -4,17 +4,18 @@ import { testerView } from '@/domain/ledger/tester-view';
 import { buildReview, pendingReviews } from '@/domain/ledger/review';
 import { NotFoundError, ValidationError } from '@/lib/errors';
 import { loadLedger } from '@/shell/ledger/load-ledger';
-import type { Behavior, BehaviorFilter, BehaviorId, LedgerSummary, Review, TesterBehaviorView } from '@/domain/ledger/types';
+import type { Behavior, BehaviorFilter, BehaviorId, LedgerSummary, Review, RunRecord, TesterBehaviorView } from '@/domain/ledger/types';
 import type { Project } from '@/domain/project/types';
 
 export type BehaviorListing = {
   behaviors: Behavior[];
   summary: LedgerSummary;
+  lastRun: RunRecord | null;
 };
 
 export async function listBehaviors(project: Project, filter: BehaviorFilter): Promise<BehaviorListing> {
   const { ledger } = await loadLedger(project);
-  return { behaviors: selectBehaviors(ledger, filter), summary: summarizeLedger(ledger) };
+  return { behaviors: selectBehaviors(ledger, filter), summary: summarizeLedger(ledger), lastRun: ledger.lastRun };
 }
 
 export async function getBehavior(project: Project, id: BehaviorId): Promise<Behavior> {

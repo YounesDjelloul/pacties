@@ -20,6 +20,8 @@ import type {
   RecordedResults,
   RejectionRequest,
   RevisionInput,
+  RunFinish,
+  TestRunFinishedEvent,
   TestRunRecording,
   TestSubmission,
   TestsSubmittedEvent,
@@ -191,6 +193,10 @@ export function buildTestSubmissionEvents(
       version: request.version,
     })),
   );
+}
+
+export function buildRunFinishedEvent(finish: RunFinish, stamp: EventStamp): TestRunFinishedEvent {
+  return { type: 'test_run_finished', seq: stamp.lastSeq + 1, at: stamp.at, actor: 'pacties', ...finish };
 }
 
 export function buildTestResultEvents(ledger: Ledger, recording: TestRunRecording, stamp: EventStamp): RecordedResults {

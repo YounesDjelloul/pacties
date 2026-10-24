@@ -1,4 +1,4 @@
-import type { BehaviorId, BehaviorTestCounts } from '@/domain/ledger/types';
+import type { BehaviorId, BehaviorTestCounts, RunStatus } from '@/domain/ledger/types';
 
 export type TestCaseStatus = 'passed' | 'failed' | 'skipped';
 
@@ -81,13 +81,12 @@ export type RunTotals = {
   skipped: number;
 };
 
-export type RunStatus = 'completed' | 'refused' | 'blocked' | 'crashed';
-
 export type RunOutcome = {
   runId: string;
   status: RunStatus;
   sync: SyncReport;
   cases: TestCase[];
+  counts: BehaviorTestCounts[];
   untagged: string[];
   unsubmitted: BehaviorId[];
   exitCode: number | null;
@@ -115,4 +114,12 @@ export type PlannerRunReport = {
   sync: SyncReport;
   exitCode: number | null;
   outputTail: string;
+};
+
+export type ConflictSide = 'repo' | 'tester';
+
+export type ConflictResolution = {
+  copyFrom: ConflictSide | null;
+  removeFrom: ConflictSide | null;
+  baseHash: string | null;
 };

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ROLES, RUN_STATUSES } from '@/domain/ledger/constants';
 
 const behaviorIdSchema = z.string().regex(/^B[1-9]\d*$/u).transform((id) => id as `B${number}`);
 
@@ -32,6 +33,16 @@ export const ledgerEventSchema = z.discriminatedUnion('type', [
     failed: z.number().int().nonnegative(),
   }),
   z.object({ ...eventBase, type: z.literal('contract_issue_reported'), version: z.number().int().positive(), problem: z.string() }),
+  z.object({
+    seq: z.number().int().positive(),
+    at: z.string(),
+    actor: z.literal('pacties'),
+    type: z.literal('test_run_finished'),
+    runId: z.string(),
+    role: z.enum(ROLES),
+    status: z.enum(RUN_STATUSES),
+    paths: z.array(z.string()),
+  }),
 ]);
 
 export const cursorsSchema = z.object({

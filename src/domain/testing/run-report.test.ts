@@ -14,6 +14,7 @@ const outcome = (overrides: Partial<RunOutcome> = {}): RunOutcome => ({
     { name: '[B10] allows the limit', suite: 'limit', status: 'passed', message: null, details: null },
     { name: '[B9] later', suite: 'limit', status: 'skipped', message: null, details: null },
   ],
+  counts: [],
   untagged: [],
   unsubmitted: [],
   exitCode: 1,
