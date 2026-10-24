@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EMPTY_LEDGER, applyEvent, foldLedger } from '@/domain/ledger/fold-ledger';
-import { approve, behaviorIn, ledgerOf, propose, proposeMany, reject, revise } from '@/test-support/ledger-script';
+import { approve, behaviorIn, ledgerOf, propose, proposeMany, recordResults, reject, reportIssue, revise, submitTests } from '@/test-support/ledger-script';
 import { accentedPayeeName, refundOutsideWindow, transferOverDailyLimit } from '@/test-support/behavior-fixtures';
 import type { BehaviorStatus, LedgerEvent } from '@/domain/ledger/types';
 
@@ -54,6 +54,9 @@ describe('foldLedger', () => {
       status: 'planned',
       pendingRevision: null,
       approvedAt: null,
+      testedVersion: null,
+      lastResults: null,
+      openIssues: [],
     });
   });
 
@@ -198,6 +201,113 @@ describe('foldLedger', () => {
     const snapshot = structuredClone(events);
     foldLedger(events);
     expect(events).toEqual(snapshot);
+  });
+});
+
+describe('foldLedger with test events', () => {
+  function testedTransfer(): LedgerEvent[] {
+    let events = approve(propose(proposeMany([], 9), transferOverDailyLimit), 'B9', 'B10');
+    events = submitTests(events, 'B10');
+    return events;
+  }
+
+  const stateOf = (events: LedgerEvent[], id: `B${number}`) => {
+    const behavior = behaviorIn(events, id);
+    return { status: behavior.status, version: behavior.version, testedVersion: behavior.testedVersion, lastResults: behavior.lastResults };
+  };
+
+  it('marks a submitted behavior tested at its version and leaves its neighbours alone', () => {
+    const events = testedTransfer();
+    expect(stateOf(events, 'B10')).toEqual({ status: 'tested', version: 1, testedVersion: 1, lastResults: null });
+    expect(behaviorIn(events, 'B9').status).toBe('approved');
+  });
+
+  it('marks a behavior passing when every tagged test passed', () => {
+    const events = recordResults(testedTransfer(), 'run-2', [{ id: 'B10', passed: 7, failed: 0 }]);
+    expect(stateOf(events, 'B10')).toEqual({ status: 'passing', version: 1, testedVersion: 1, lastResults: { version: 1, runId: 'run-2', passed: 7, failed: 0 } });
+  });
+
+  it('keeps a behavior tested when any tagged test failed', () => {
+    const events = recordResults(testedTransfer(), 'run-2', [{ id: 'B10', passed: 6, failed: 1 }]);
+    expect(stateOf(events, 'B10').status).toBe('tested');
+  });
+
+  it('keeps a behavior tested when the run found none of its tests', () => {
+    const events = recordResults(testedTransfer(), 'run-2', [{ id: 'B9', passed: 2, failed: 0 }]);
+    expect(stateOf(events, 'B10')).toMatchObject({ status: 'tested', lastResults: { passed: 0, failed: 0 } });
+  });
+
+  it('drops a passing behavior back to tested when its tests are resubmitted', () => {
+    let events = recordResults(testedTransfer(), 'run-2', [{ id: 'B10', passed: 7, failed: 0 }]);
+    events = submitTests(events, 'B10');
+    expect(stateOf(events, 'B10')).toEqual({ status: 'tested', version: 1, testedVersion: 1, lastResults: null });
+  });
+
+  it('goes stale on an approved revision, ignores old results, and clears stale on a resubmit at the new version', () => {
+    let events = recordResults(testedTransfer(), 'run-2', [{ id: 'B10', passed: 7, failed: 0 }]);
+    events = revise(events, { id: 'B10', contract: { dependsOn: [] }, reason: 'stateless' });
+    events = approve(events, 'B10');
+    expect(stateOf(events, 'B10')).toMatchObject({ status: 'stale', version: 2, testedVersion: 1 });
+
+    const staleResult: LedgerEvent = {
+      type: 'test_results_recorded',
+      seq: events.length + 1,
+      at: AT,
+      actor: 'pacties',
+      behaviorId: 'B10',
+      version: 1,
+      runId: 'run-3',
+      passed: 7,
+      failed: 0,
+    };
+    expect(stateOf([...events, staleResult], 'B10')).toMatchObject({ status: 'stale', lastResults: { runId: 'run-2' } });
+
+    events = recordResults(submitTests(events, 'B10'), 'run-4', [{ id: 'B10', passed: 8, failed: 0 }]);
+    expect(stateOf(events, 'B10')).toMatchObject({ status: 'passing', version: 2, testedVersion: 2, lastResults: { runId: 'run-4', version: 2 } });
+  });
+
+  it('ignores results for an approved behavior that was never submitted', () => {
+    const results: LedgerEvent = {
+      type: 'test_results_recorded',
+      seq: testedTransfer().length + 1,
+      at: AT,
+      actor: 'pacties',
+      behaviorId: 'B9',
+      version: 1,
+      runId: 'run-5',
+      passed: 1,
+      failed: 0,
+    };
+    expect(stateOf([...testedTransfer(), results], 'B9')).toMatchObject({ status: 'approved', lastResults: null });
+  });
+
+  it('keeps a contract issue open through a rejected revision and closes it when a revision is approved', () => {
+    let events = reportIssue(testedTransfer(), 'B10', 'remaining is undefined when the limit is hit');
+    expect(behaviorIn(events, 'B10').openIssues).toEqual([{ version: 1, problem: 'remaining is undefined when the limit is hit', at: expect.any(String) }]);
+
+    events = revise(events, { id: 'B10', contract: { interface: ['POST /transfer { from_id, to_id, amount } -> 429 { remaining: Decimal }'] }, reason: 'tester issue' });
+    events = reject(events, 'B10', 'keep the contract as is');
+    expect(behaviorIn(events, 'B10').openIssues).toHaveLength(1);
+
+    events = revise(events, { id: 'B10', contract: { interface: ['POST /transfer { from_id, to_id, amount } -> 429 { remaining: Decimal }'] }, reason: 'tester issue' });
+    events = approve(events, 'B10');
+    expect(behaviorIn(events, 'B10').openIssues).toEqual([]);
+  });
+
+  it.each<[string, Partial<LedgerEvent>]>([
+    ['tests submitted for a draft', { type: 'tests_submitted', behaviorId: 'B3', version: 1, actor: 'tester' }],
+    ['tests submitted for an old version', { type: 'tests_submitted', behaviorId: 'B10', version: 2, actor: 'tester' }],
+    ['a contract issue on a draft', { type: 'contract_issue_reported', behaviorId: 'B3', version: 1, actor: 'tester', problem: 'x' }],
+  ])('fails on %s', (_, overrides) => {
+    const events = testedTransfer();
+    const bad = { seq: events.length + 1, at: AT, ...overrides } as LedgerEvent;
+    expect(foldLedger([...events, bad]).ok).toBe(false);
+  });
+
+  it('fails on a test event targeting a rejected behavior', () => {
+    const events = reject(testedTransfer(), 'B4', 'out of scope');
+    const bad: LedgerEvent = { type: 'tests_submitted', seq: events.length + 1, at: AT, actor: 'tester', behaviorId: 'B4', version: 1 };
+    expect(foldLedger([...events, bad]).ok).toBe(false);
   });
 });
 

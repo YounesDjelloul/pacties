@@ -1,3 +1,5 @@
+import type { Launcher } from '@/domain/clients/types';
+
 export type CliIo = {
   cwd: string;
   isInteractive: boolean;
@@ -6,6 +8,8 @@ export type CliIo = {
   confirm: (message: string) => Promise<boolean>;
   chooseMany: (message: string, choices: Choice[]) => Promise<string[]>;
   now: () => Date;
+  readStdin: () => Promise<string>;
+  selfLauncher: Launcher;
 };
 
 export type Choice = {

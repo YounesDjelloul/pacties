@@ -1,5 +1,6 @@
+import fs from 'node:fs/promises';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { runCli } from '@/cli/program';
 import { getBehavior } from '@/shell/ledger/read-behaviors';
 import { proposeBehavior } from '@/shell/ledger/propose-behavior';
@@ -198,6 +199,18 @@ describe('pacties CLI', () => {
       expect(io.errors()).toContain('pacties init --print');
     });
 
+    it('removes pacties with --remove and says the repo is back to normal', async () => {
+      await createTempProject(workspace());
+      vi.stubEnv('PACTIES_CURSOR_HOME', path.join(workspace().root, 'cursor home'));
+      onTestFinished(() => {
+        vi.unstubAllEnvs();
+      });
+      const io = fakeCliIo(repoOf(), { interactive: false });
+      expect(await runCli(['init', '--remove', '--clients', 'cursor'], io)).toBe(0);
+      expect(io.output()).toContain('✓ Cursor:');
+      expect(io.output()).toContain('pacties is no longer registered');
+    });
+
     it('registers nothing when the developer unticks every client', async () => {
       await createTempProject(workspace());
       const io = fakeCliIo(repoOf(), { interactive: true, choose: () => [] });
@@ -205,6 +218,44 @@ describe('pacties CLI', () => {
       expect(io.prompts).toEqual(['Register pacties with which clients?']);
       expect(io.errors()).toBe('pacties: Nothing selected; pacties was not registered anywhere');
     });
+  });
+
+  describe('hook tester-guard', () => {
+    const guardFileIn = async (guarded: string[]) => {
+      const file = path.join(workspace().root, 'session ✦', 'guard.json');
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, JSON.stringify({ guarded }));
+      return file;
+    };
+
+    it('blocks a tool call that touches the repository with exit code 2 and a reason on stderr', async () => {
+      const file = await guardFileIn([repoOf()]);
+      const stdin = JSON.stringify({ tool_name: 'Read', tool_input: { file_path: path.join(repoOf(), 'src', 'limit.ts') } });
+      const io = fakeCliIo(workspace().root, { interactive: false, stdin });
+      expect(await runCli(['hook', 'tester-guard', file], io)).toBe(2);
+      expect(io.errors()).toContain('the tester cannot touch the implementation repository');
+    });
+
+    it('lets a tool call inside the sandbox through with exit code 0 and no output', async () => {
+      const file = await guardFileIn([repoOf()]);
+      const io = fakeCliIo(workspace().root, { interactive: false, stdin: JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: 'src/__tests__/limit.test.ts' } }) });
+      expect(await runCli(['hook', 'tester-guard', file], io)).toBe(0);
+      expect([io.output(), io.errors()]).toEqual(['', '']);
+    });
+
+    it.each(['', '{ truncated', 'null', '{"tool_name":"Read"}'])('fails closed on unreadable hook input %j', async (stdin) => {
+      const file = await guardFileIn([repoOf()]);
+      const io = fakeCliIo(workspace().root, { interactive: false, stdin });
+      expect(await runCli(['hook', 'tester-guard', file], io)).toBe(2);
+    });
+  });
+
+  it('refuses to open the tester outside a git repository', async () => {
+    const folder = path.join(workspace().root, 'plain folder');
+    await fs.mkdir(folder);
+    const io = fakeCliIo(folder, { interactive: true });
+    expect(await runCli(['tester'], io)).toBe(1);
+    expect(io.errors()).toContain('pacties needs a git repository');
   });
 
   it('fails when mcp is started without a role', async () => {

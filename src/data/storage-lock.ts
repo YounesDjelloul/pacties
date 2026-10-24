@@ -18,6 +18,10 @@ export function withLedgerLock<T>(projectDir: string, work: (lock: StorageLock) 
   return withDirectoryLock(projectDir, 'ledger.lock', work);
 }
 
+export function withRunLock<T>(projectDir: string, work: (lock: StorageLock) => Promise<T>): Promise<T> {
+  return withDirectoryLock(projectDir, 'run.lock', work);
+}
+
 export function withHomeLock<T>(work: (lock: StorageLock) => Promise<T>): Promise<T> {
   return withDirectoryLock(config.pactiesHome, 'home.lock', work);
 }
@@ -45,7 +49,7 @@ async function withDirectoryLock<T>(dir: string, lockName: string, work: (lock: 
 
 async function acquire(dir: string, lockName: string): Promise<() => Promise<void>> {
   try {
-    return await lockfile.lock(dir, {
+    return await lockfile.lock(path.join(dir, path.parse(lockName).name), {
       lockfilePath: path.join(dir, lockName),
       retries: LOCK_RETRIES,
       stale: STALE_LOCK_MS,

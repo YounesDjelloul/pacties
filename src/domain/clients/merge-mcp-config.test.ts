@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { mergeServersIntoMcpConfig } from '@/domain/clients/merge-mcp-config';
-import { buildServerSpecs } from '@/domain/clients/server-specs';
+import { buildPlannerServerSpec } from '@/domain/clients/server-specs';
 
-const specs = buildServerSpecs({ command: 'pacties', args: [] }, '${workspaceFolder}');
+const specs = [
+  buildPlannerServerSpec({ command: 'pacties', args: [] }, '${workspaceFolder}'),
+  { name: 'pacties-tester', command: 'pacties', args: ['mcp', '--role', 'tester', '--repo', '${workspaceFolder}'] },
+];
 
 describe('mergeServersIntoMcpConfig', () => {
   it('creates the config from nothing', () => {

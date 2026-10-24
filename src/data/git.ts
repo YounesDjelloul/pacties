@@ -31,3 +31,28 @@ export async function readRepoRoot(repoPath: string): Promise<string | null> {
   const topLevel = await git(repoPath, ['rev-parse', '--show-toplevel']);
   return topLevel === null ? null : fs.realpath(topLevel.trim());
 }
+
+export async function listRepoFiles(repoRoot: string): Promise<string[]> {
+  const listed = await git(repoRoot, ['ls-files', '-z', '--cached', '--others', '--exclude-standard']);
+  if (listed === null) {
+    return [];
+  }
+  return [...new Set(listed.split('\0').filter((entry) => entry.length > 0))].sort();
+}
+
+export async function listWorktreePaths(repoRoot: string): Promise<string[]> {
+  const listed = await git(repoRoot, ['worktree', 'list', '--porcelain', '-z']);
+  if (listed === null) {
+    return [];
+  }
+  const paths = listed
+    .split('\0')
+    .filter((entry) => entry.startsWith('worktree '))
+    .map((entry) => entry.slice('worktree '.length));
+  return Promise.all(paths.map((worktree) => fs.realpath(worktree).catch(() => worktree)));
+}
+
+export async function gitPath(repoRoot: string, name: string): Promise<string | null> {
+  const resolved = await git(repoRoot, ['rev-parse', '--git-path', name]);
+  return resolved === null ? null : path.resolve(repoRoot, resolved.trim());
+}

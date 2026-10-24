@@ -10,6 +10,9 @@ export const config = {
   get cursorHome(): string {
     return process.env.PACTIES_CURSOR_HOME ?? path.join(os.homedir(), '.cursor');
   },
+  get claudeHome(): string {
+    return process.env.PACTIES_CLAUDE_HOME ?? path.join(os.homedir(), '.claude');
+  },
   get claudeBin(): string {
     return process.env.PACTIES_CLAUDE_BIN ?? 'claude';
   },

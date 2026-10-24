@@ -11,12 +11,18 @@ import type {
   BehaviorProposedEvent,
   BehaviorRejectedEvent,
   BehaviorRevisedEvent,
+  ContractIssueInput,
+  ContractIssueReportedEvent,
   EventStamp,
   Ledger,
   LedgerFailure,
   ProposalInput,
+  RecordedResults,
   RejectionRequest,
   RevisionInput,
+  TestRunRecording,
+  TestSubmission,
+  TestsSubmittedEvent,
 } from '@/domain/ledger/types';
 
 export function buildProposalEvent(
@@ -95,7 +101,7 @@ export function buildApprovalEvents(
     return invalid('Name at least one behavior to approve');
   }
 
-  const duplicate = requests.find((request, index) => requests.findIndex((other) => other.id === request.id) !== index);
+  const duplicate = findDuplicate(requests);
   if (duplicate !== undefined) {
     return invalid(`${duplicate.id} is listed more than once`);
   }
@@ -148,6 +154,113 @@ export function buildRejectionEvent(
     version,
     reason: reason.value,
   });
+}
+
+export function buildTestSubmissionEvents(
+  ledger: Ledger,
+  submission: TestSubmission,
+  stamp: EventStamp,
+): Result<TestsSubmittedEvent[], LedgerFailure> {
+  const { requests, taggedIds } = submission;
+  if (requests.length === 0) {
+    return invalid('Name at least one behavior your tests cover');
+  }
+
+  const duplicate = findDuplicate(requests);
+  if (duplicate !== undefined) {
+    return invalid(`${duplicate.id} is listed more than once`);
+  }
+
+  for (const request of requests) {
+    const settled = checkSettledVersion(ledger, request.id, request.version);
+    if (!settled.ok) {
+      return settled;
+    }
+    if (!taggedIds.includes(request.id)) {
+      return invalid(`No test is tagged [${request.id}]; put the tag in each test name, e.g. it('[${request.id}] ...')`);
+    }
+  }
+
+  return ok(
+    requests.map((request, index) => ({
+      type: 'tests_submitted',
+      seq: stamp.lastSeq + 1 + index,
+      at: stamp.at,
+      actor: 'tester',
+      behaviorId: request.id,
+      version: request.version,
+    })),
+  );
+}
+
+export function buildTestResultEvents(ledger: Ledger, recording: TestRunRecording, stamp: EventStamp): RecordedResults {
+  const submitted = ledger.behaviors.filter(
+    (behavior) => behavior.status !== 'rejected' && behavior.testedVersion !== null && behavior.testedVersion === behavior.version,
+  );
+  const unsubmitted = recording.counts
+    .map((count) => count.id)
+    .filter((id) => !submitted.some((behavior) => behavior.id === id));
+
+  const events = submitted.map((behavior, index) => {
+    const counts = recording.counts.find((count) => count.id === behavior.id);
+    return {
+      type: 'test_results_recorded' as const,
+      seq: stamp.lastSeq + 1 + index,
+      at: stamp.at,
+      actor: 'pacties' as const,
+      behaviorId: behavior.id,
+      version: behavior.version,
+      runId: recording.runId,
+      passed: counts?.passed ?? 0,
+      failed: counts?.failed ?? 0,
+    };
+  });
+
+  return { events, unsubmitted };
+}
+
+export function buildContractIssueEvent(
+  ledger: Ledger,
+  input: ContractIssueInput,
+  stamp: EventStamp,
+): Result<ContractIssueReportedEvent, LedgerFailure> {
+  const settled = checkSettledVersion(ledger, input.id, input.version);
+  if (!settled.ok) {
+    return settled;
+  }
+
+  const problem = normalizeReason(input.problem);
+  if (!problem.ok) {
+    return invalid('Describe the problem with the contract');
+  }
+
+  return ok({
+    type: 'contract_issue_reported',
+    seq: stamp.lastSeq + 1,
+    at: stamp.at,
+    actor: 'tester',
+    behaviorId: input.id,
+    version: input.version,
+    problem: problem.value,
+  });
+}
+
+function checkSettledVersion(ledger: Ledger, id: BehaviorId, version: number): Result<Behavior, LedgerFailure> {
+  const behavior = findBehavior(ledger, id);
+  if (behavior === undefined || behavior.approvedAt === null || behavior.status === 'rejected') {
+    return notFound(id);
+  }
+  if (behavior.version !== version) {
+    return fail({
+      kind: 'conflict',
+      message: `${id} is now at v${behavior.version}, not v${version}; call get_delta to see what changed`,
+    });
+  }
+  return ok(behavior);
+}
+
+function findDuplicate<T extends { id: BehaviorId }>(requests: T[]): T | undefined {
+  return requests.find((request, index) => requests.findIndex((other) => other.id === request.id) !== index);
 }
 
 function checkApprovable(ledger: Ledger, request: ApprovalRequest): Result<Behavior, LedgerFailure> {

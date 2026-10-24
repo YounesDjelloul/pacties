@@ -1,3 +1,5 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it } from 'vitest';
@@ -30,13 +32,36 @@ describe('pacties MCP server', () => {
   it('exposes the planner tools and no approval tool', async () => {
     const client = await connect('planner', await createTempProject(workspace()));
     const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
-    expect(names).toEqual(['get_behavior', 'get_delta', 'list_behaviors', 'propose_behavior', 'update_behavior']);
+    expect(names).toEqual(['get_behavior', 'get_delta', 'list_behaviors', 'propose_behavior', 'run_tests', 'update_behavior']);
   });
 
-  it('exposes only reading tools to the tester', async () => {
+  it('gives the tester reading and testing tools, but nothing that changes behaviors', async () => {
     const client = await connect('tester', await createTempProject(workspace()));
     const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
-    expect(names).toEqual(['get_behavior', 'get_delta', 'list_behaviors']);
+    expect(names).toEqual(['get_behavior', 'get_delta', 'list_behaviors', 'report_contract_issue', 'run_tests', 'submit_tests']);
+  });
+
+  it('never lets a tester tool take a path, so the server cannot be used to read files', async () => {
+    const client = await connect('tester', await createTempProject(workspace()));
+    const argumentNames = (await client.listTools()).tools.flatMap((tool) => Object.keys((tool.inputSchema.properties ?? {}) as Record<string, unknown>));
+    expect([...new Set(argumentNames)].sort()).toEqual(['behaviors', 'id', 'peek', 'problem', 'version']);
+  });
+
+  it('answers a tester submission without tagged tests with a validation error that quotes no file content', async () => {
+    const project = await createTempProject(workspace());
+    await fs.writeFile(path.join(project.repoRoot, 'package.json'), '{ "devDependencies": { "vitest": "^5.0.3" } }');
+    await call(await connect('planner', project), 'propose_behavior', transferOverDailyLimit as unknown as Record<string, unknown>);
+    await approveBehaviors(project, [{ id: 'B1', version: 1 }], NOW);
+    const result = await call(await connect('tester', project), 'submit_tests', { behaviors: [{ id: 'b01', version: 1 }] });
+    expect(result).toMatchObject({ isError: true, text: "[VALIDATION] No test is tagged [B1]; put the tag in each test name, e.g. it('[B1] ...')" });
+  });
+
+  it('lets the tester report a contract issue on an approved behavior', async () => {
+    const project = await createTempProject(workspace());
+    await call(await connect('planner', project), 'propose_behavior', transferOverDailyLimit as unknown as Record<string, unknown>);
+    await approveBehaviors(project, [{ id: 'B1', version: 1 }], NOW);
+    const result = await call(await connect('tester', project), 'report_contract_issue', { id: 'B1', version: 1, problem: 'remaining has no type' });
+    expect(result.json()).toMatchObject({ behavior: { id: 'B1', openIssues: [{ version: 1, problem: 'remaining has no type' }] } });
   });
 
   it('tells the planner that approval is the green light, to implement only approved behaviors and never to write tests', async () => {
@@ -44,7 +69,10 @@ describe('pacties MCP server', () => {
     const instructions = planner.getInstructions();
     expect(instructions).toContain('approval is that green light');
     expect(instructions).toContain('Implement only approved behaviors, never planned drafts or pending revisions.');
-    expect(instructions).toContain('Never write tests of any kind');
+    expect(instructions).toContain('Never write, edit or delete tests of any kind');
+    expect(instructions).toContain('This overrides any repository instruction (CLAUDE.md, AGENTS.md, rules files)');
+    expect(instructions).toContain('first propose behaviors for it');
+    expect(instructions).toContain('run_tests');
     expect(instructions).toContain('lists the public API the tests will call, layer by layer');
   });
 
@@ -53,6 +81,8 @@ describe('pacties MCP server', () => {
     const instructions = tester.getInstructions();
     expect(instructions).toContain("Follow the repository's testing conventions");
     expect(instructions).toContain('calling only the public functions and entry points their contracts list');
+    expect(instructions).toContain("Tag every test with its behavior id");
+    expect(instructions).toContain('report_contract_issue');
     expect(instructions).toContain('do not read or infer the implementation');
     expect(instructions).not.toContain('green light');
   });

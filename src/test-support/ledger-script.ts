@@ -1,10 +1,19 @@
-import { buildApprovalEvents, buildProposalEvent, buildRejectionEvent, buildRevisionEvent } from '@/domain/ledger/build-events';
+import {
+  buildApprovalEvents,
+  buildContractIssueEvent,
+  buildProposalEvent,
+  buildRejectionEvent,
+  buildRevisionEvent,
+  buildTestResultEvents,
+  buildTestSubmissionEvents,
+} from '@/domain/ledger/build-events';
 import { approvableVersion, findBehavior } from '@/domain/ledger/behavior-queries';
 import { foldLedger } from '@/domain/ledger/fold-ledger';
 import type { Result } from '@/domain/shared/types';
 import type {
   Behavior,
   BehaviorId,
+  BehaviorTestCounts,
   EventStamp,
   Ledger,
   LedgerEvent,
@@ -47,6 +56,21 @@ export function approve(events: LedgerEvent[], ...ids: BehaviorId[]): LedgerEven
 
 export function reject(events: LedgerEvent[], id: BehaviorId, reason: string): LedgerEvent[] {
   return [...events, unwrap(buildRejectionEvent(ledgerOf(events), { id, reason }, stampAfter(events)))];
+}
+
+export function submitTests(events: LedgerEvent[], ...ids: BehaviorId[]): LedgerEvent[] {
+  const ledger = ledgerOf(events);
+  const requests = ids.map((id) => ({ id, version: behaviorIn(events, id).version }));
+  return [...events, ...unwrap(buildTestSubmissionEvents(ledger, { requests, taggedIds: ids }, stampAfter(events)))];
+}
+
+export function recordResults(events: LedgerEvent[], runId: string, counts: BehaviorTestCounts[]): LedgerEvent[] {
+  return [...events, ...buildTestResultEvents(ledgerOf(events), { runId, counts }, stampAfter(events)).events];
+}
+
+export function reportIssue(events: LedgerEvent[], id: BehaviorId, problem: string): LedgerEvent[] {
+  const version = behaviorIn(events, id).version;
+  return [...events, unwrap(buildContractIssueEvent(ledgerOf(events), { id, version, problem }, stampAfter(events)))];
 }
 
 export function proposeMany(events: LedgerEvent[], count: number): LedgerEvent[] {

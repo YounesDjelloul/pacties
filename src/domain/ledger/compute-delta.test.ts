@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computePlannerDelta, computeTesterDelta } from '@/domain/ledger/compute-delta';
-import { approve, propose, proposeMany, reject, revise } from '@/test-support/ledger-script';
+import { approve, propose, proposeMany, recordResults, reject, reportIssue, revise, submitTests } from '@/test-support/ledger-script';
 import { accentedPayeeName, refundOutsideWindow, transferOverDailyLimit } from '@/test-support/behavior-fixtures';
 import type { LedgerEvent } from '@/domain/ledger/types';
 
@@ -47,6 +47,7 @@ describe('computeTesterDelta', () => {
           dependsOnAdded: ['get_daily_total(user_id) -> int'],
           dependsOnRemoved: [],
         },
+        openIssues: [],
       },
     ]);
   });
@@ -176,7 +177,7 @@ describe('computePlannerDelta', () => {
 
   it('is empty with no decisions when the cursor is at the head', () => {
     const events = transferApprovedAfterNineRefunds();
-    expect(unwrap(computePlannerDelta(events, 11))).toEqual({ fromSeq: 11, toSeq: 11, resync: false, changes: [], decisions: [] });
+    expect(unwrap(computePlannerDelta(events, 11))).toEqual({ fromSeq: 11, toSeq: 11, resync: false, changes: [], decisions: [], testResults: [], contractIssues: [] });
   });
 
   it('sees a different delta than the tester over the same events and cursor', () => {
@@ -188,5 +189,46 @@ describe('computePlannerDelta', () => {
   it('includes every decision when resyncing', () => {
     const delta = unwrap(computePlannerDelta(transferApprovedAfterNineRefunds(), 500));
     expect([delta.resync, delta.decisions.map((decision) => decision.id)]).toEqual([true, ['B10']]);
+  });
+});
+
+describe('deltas with test events', () => {
+  function testedAndReported(): LedgerEvent[] {
+    let events = approve(transferApprovedAfterNineRefunds(), 'B2');
+    events = submitTests(events, 'B10', 'B2');
+    events = recordResults(events, 'run-31', [{ id: 'B10', passed: 5, failed: 2 }, { id: 'B2', passed: 9, failed: 0 }]);
+    return reportIssue(events, 'B10', 'remaining is not defined once the limit is hit');
+  }
+
+  it('gives the planner the results and contract issues recorded since its cursor', () => {
+    const events = testedAndReported();
+    const delta = unwrap(computePlannerDelta(events, 12));
+    expect(delta.testResults.map(({ id, version, runId, passed, failed }) => ({ id, version, runId, passed, failed }))).toEqual([
+      { id: 'B2', version: 1, runId: 'run-31', passed: 9, failed: 0 },
+      { id: 'B10', version: 1, runId: 'run-31', passed: 5, failed: 2 },
+    ]);
+    expect(delta.contractIssues).toEqual([{ id: 'B10', version: 1, problem: 'remaining is not defined once the limit is hit', at: expect.any(String) }]);
+    expect(delta.changes.map((change) => [change.id, change.change, change.status])).toEqual([
+      ['B2', 'status_changed', 'passing'],
+      ['B10', 'status_changed', 'tested'],
+    ]);
+  });
+
+  it('shows the tester status changes and its own open issues, but no run ids or counts', () => {
+    const events = testedAndReported();
+    const delta = unwrap(computeTesterDelta(events, 12));
+    expect(delta.changes.map((change) => [change.id, change.change, change.status])).toEqual([
+      ['B2', 'status_changed', 'passing'],
+      ['B10', 'status_changed', 'tested'],
+    ]);
+    expect(JSON.stringify(delta)).not.toContain('run-31');
+  });
+
+  it('reports a new contract issue to the tester as issues_changed when nothing else moved', () => {
+    const events = testedAndReported();
+    const delta = unwrap(computeTesterDelta(events, events.length - 1));
+    expect(delta.changes.map((change) => [change.id, change.change, change.openIssues.map((issue) => issue.problem)])).toEqual([
+      ['B10', 'issues_changed', ['remaining is not defined once the limit is hit']],
+    ]);
   });
 });

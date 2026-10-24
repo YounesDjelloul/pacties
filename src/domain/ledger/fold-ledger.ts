@@ -9,8 +9,11 @@ import type {
   BehaviorRejectedEvent,
   BehaviorRevisedEvent,
   BehaviorStatus,
+  ContractIssueReportedEvent,
   Ledger,
   LedgerEvent,
+  TestResultsRecordedEvent,
+  TestsSubmittedEvent,
 } from '@/domain/ledger/types';
 
 export const EMPTY_LEDGER: Ledger = { behaviors: [], headSeq: 0 };
@@ -64,15 +67,15 @@ function applyProposal(ledger: Ledger, event: BehaviorProposedEvent): Result<Led
     status: 'planned',
     pendingRevision: null,
     approvedAt: null,
+    testedVersion: null,
+    lastResults: null,
+    openIssues: [],
   };
 
   return ok({ behaviors: [...ledger.behaviors, behavior], headSeq: event.seq });
 }
 
-function applyToBehavior(
-  behavior: Behavior,
-  event: BehaviorRevisedEvent | BehaviorApprovedEvent | BehaviorRejectedEvent,
-): Result<Behavior> {
+function applyToBehavior(behavior: Behavior, event: Exclude<LedgerEvent, BehaviorProposedEvent>): Result<Behavior> {
   if (behavior.status === 'rejected') {
     return fail(`Event ${event.seq} changes ${behavior.id}, which was rejected`);
   }
@@ -84,6 +87,12 @@ function applyToBehavior(
       return applyApproval(behavior, event);
     case 'behavior_rejected':
       return applyRejection(behavior, event);
+    case 'tests_submitted':
+      return applyTestSubmission(behavior, event);
+    case 'test_results_recorded':
+      return applyTestResults(behavior, event);
+    case 'contract_issue_reported':
+      return applyContractIssue(behavior, event);
   }
 }
 
@@ -120,6 +129,7 @@ function applyApproval(behavior: Behavior, event: BehaviorApprovedEvent): Result
     status: statusAfterRevisionApproval(behavior.status),
     pendingRevision: null,
     approvedAt: event.at,
+    openIssues: behavior.openIssues.filter((issue) => issue.version >= pending.version),
   });
 }
 
@@ -133,6 +143,41 @@ function applyRejection(behavior: Behavior, event: BehaviorRejectedEvent): Resul
   }
 
   return ok({ ...behavior, pendingRevision: null });
+}
+
+function applyTestSubmission(behavior: Behavior, event: TestsSubmittedEvent): Result<Behavior> {
+  const settled = requireSettledVersion(behavior, event);
+  if (!settled.ok) {
+    return settled;
+  }
+  return ok({ ...behavior, status: 'tested', testedVersion: event.version, lastResults: null });
+}
+
+function applyTestResults(behavior: Behavior, event: TestResultsRecordedEvent): Result<Behavior> {
+  if (event.version !== behavior.version || behavior.testedVersion !== event.version) {
+    return ok(behavior);
+  }
+  const lastResults = { version: event.version, runId: event.runId, passed: event.passed, failed: event.failed };
+  const status: BehaviorStatus = event.failed === 0 && event.passed > 0 ? 'passing' : 'tested';
+  return ok({ ...behavior, status, lastResults });
+}
+
+function applyContractIssue(behavior: Behavior, event: ContractIssueReportedEvent): Result<Behavior> {
+  const settled = requireSettledVersion(behavior, event);
+  if (!settled.ok) {
+    return settled;
+  }
+  return ok({ ...behavior, openIssues: [...behavior.openIssues, { version: event.version, problem: event.problem, at: event.at }] });
+}
+
+function requireSettledVersion(behavior: Behavior, event: TestsSubmittedEvent | ContractIssueReportedEvent): Result<Behavior> {
+  if (behavior.approvedAt === null) {
+    return fail(`Event ${event.seq} refers to ${behavior.id}, which was never approved`);
+  }
+  if (event.version !== behavior.version) {
+    return fail(`Event ${event.seq} refers to ${behavior.id} v${event.version}, but the approved version is v${behavior.version}`);
+  }
+  return ok(behavior);
 }
 
 function statusAfterRevisionApproval(status: BehaviorStatus): BehaviorStatus {

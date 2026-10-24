@@ -13,7 +13,7 @@ const contentSchema = z.object({
 const eventBase = {
   seq: z.number().int().positive(),
   at: z.string(),
-  actor: z.enum(['planner', 'developer', 'pacties']),
+  actor: z.enum(['planner', 'developer', 'tester', 'pacties']),
   behaviorId: behaviorIdSchema,
 };
 
@@ -22,6 +22,16 @@ export const ledgerEventSchema = z.discriminatedUnion('type', [
   z.object({ ...eventBase, type: z.literal('behavior_revised'), content: contentSchema, reason: z.string() }),
   z.object({ ...eventBase, type: z.literal('behavior_approved'), version: z.number().int().positive() }),
   z.object({ ...eventBase, type: z.literal('behavior_rejected'), version: z.number().int().positive(), reason: z.string() }),
+  z.object({ ...eventBase, type: z.literal('tests_submitted'), version: z.number().int().positive() }),
+  z.object({
+    ...eventBase,
+    type: z.literal('test_results_recorded'),
+    version: z.number().int().positive(),
+    runId: z.string(),
+    passed: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+  }),
+  z.object({ ...eventBase, type: z.literal('contract_issue_reported'), version: z.number().int().positive(), problem: z.string() }),
 ]);
 
 export const cursorsSchema = z.object({

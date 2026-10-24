@@ -1,10 +1,12 @@
 import path from 'node:path';
 import { Command, CommanderError, Option } from 'commander';
 import { approveCommand } from '@/cli/commands/approve';
+import { testerGuardCommand } from '@/cli/commands/hook';
 import { initCommand } from '@/cli/commands/init';
 import { listCommand } from '@/cli/commands/list';
 import { rejectCommand } from '@/cli/commands/reject';
 import { showCommand } from '@/cli/commands/show';
+import { testerCommand } from '@/cli/commands/tester';
 import { ROLES } from '@/domain/ledger/constants';
 import { AppError } from '@/lib/errors';
 import { PACTIES_VERSION } from '@/lib/config';
@@ -16,15 +18,16 @@ const EXIT_FAILURE = 1;
 const EXIT_UNEXPECTED = 2;
 
 export async function runCli(argv: string[], io: CliIo): Promise<number> {
+  const exit = { code: 0 };
   try {
-    await buildProgram(io).parseAsync(argv, { from: 'user' });
-    return 0;
+    await buildProgram(io, exit).parseAsync(argv, { from: 'user' });
+    return exit.code;
   } catch (error) {
     return reportError(io, error);
   }
 }
 
-function buildProgram(io: CliIo): Command {
+function buildProgram(io: CliIo, exit: { code: number }): Command {
   const program = new Command('pacties')
     .description('Coordinate coding agents on one repo through a shared behavior ledger')
     .version(PACTIES_VERSION)
@@ -74,12 +77,29 @@ function buildProgram(io: CliIo): Command {
     .action((id: string, options: { reason: string; repo: string }) => rejectCommand(io, id, options.reason, repoPath(options)));
 
   program
+    .command('tester')
+    .description('open the sandboxed tester session in Claude Code: it sees only tests, conventions and config')
+    .addOption(repoOption())
+    .action(async (options: { repo: string }) => {
+      exit.code = await testerCommand(io, repoPath(options));
+    });
+
+  program
+    .command('hook', { hidden: true })
+    .command('tester-guard')
+    .argument('<guardFile>')
+    .action(async (guardFile: string) => {
+      exit.code = await testerGuardCommand(io, guardFile);
+    });
+
+  program
     .command('init')
     .description('register the pacties MCP servers with your coding agents')
     .option('--clients <ids>', 'comma-separated clients, e.g. claude-code,cursor')
     .option('--print', 'print the server config to add by hand instead')
+    .option('--remove', 'unregister pacties and lift the test-file guard (all clients unless --clients is given)')
     .addOption(repoOption())
-    .action((options: { clients?: string; print?: boolean; repo: string }) => initCommand(io, options, repoPath(options)));
+    .action((options: { clients?: string; print?: boolean; remove?: boolean; repo: string }) => initCommand(io, options, repoPath(options)));
 
   return program;
 }

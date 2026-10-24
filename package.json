@@ -24,11 +24,14 @@
     "@inquirer/prompts": "^8.7.3",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "commander": "^15.0.0",
+    "fast-xml-parser": "^5.11.2",
+    "picomatch": "^4.0.7",
     "proper-lockfile": "^4.1.2",
     "zod": "^4.6.6"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "@types/picomatch": "^4.0.3",
     "@types/proper-lockfile": "^4.1.4",
     "tsup": "^8.5.1",
     "tsx": "^4.23.15",

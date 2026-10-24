@@ -24,6 +24,7 @@ export type Project = {
   name: string;
   dir: string;
   rootCommit: string | null;
+  repoRoot: string;
 };
 
 export type ProjectRecord = {

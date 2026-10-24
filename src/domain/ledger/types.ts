@@ -4,7 +4,7 @@ export type BehaviorId = `B${number}`;
 
 export type Role = (typeof ROLES)[number];
 
-export type Actor = 'planner' | 'developer' | 'pacties';
+export type Actor = 'planner' | 'developer' | 'tester' | 'pacties';
 
 export type BehaviorStatus = (typeof BEHAVIOR_STATUSES)[number];
 
@@ -23,12 +23,28 @@ export type PendingRevision = BehaviorContent & {
   version: number;
 };
 
+export type TestResults = {
+  version: number;
+  runId: string;
+  passed: number;
+  failed: number;
+};
+
+export type ContractIssue = {
+  version: number;
+  problem: string;
+  at: string;
+};
+
 export type Behavior = BehaviorContent & {
   id: BehaviorId;
   version: number;
   status: BehaviorStatus;
   pendingRevision: PendingRevision | null;
   approvedAt: string | null;
+  testedVersion: number | null;
+  lastResults: TestResults | null;
+  openIssues: ContractIssue[];
 };
 
 export type Ledger = {
@@ -65,11 +81,33 @@ export type BehaviorRejectedEvent = EventBase & {
   reason: string;
 };
 
+export type TestsSubmittedEvent = EventBase & {
+  type: 'tests_submitted';
+  version: number;
+};
+
+export type TestResultsRecordedEvent = EventBase & {
+  type: 'test_results_recorded';
+  version: number;
+  runId: string;
+  passed: number;
+  failed: number;
+};
+
+export type ContractIssueReportedEvent = EventBase & {
+  type: 'contract_issue_reported';
+  version: number;
+  problem: string;
+};
+
 export type LedgerEvent =
   | BehaviorProposedEvent
   | BehaviorRevisedEvent
   | BehaviorApprovedEvent
-  | BehaviorRejectedEvent;
+  | BehaviorRejectedEvent
+  | TestsSubmittedEvent
+  | TestResultsRecordedEvent
+  | ContractIssueReportedEvent;
 
 export type ContractInput = {
   interface: string[];
@@ -98,6 +136,33 @@ export type RejectionRequest = {
   reason: string;
 };
 
+export type TestSubmission = {
+  requests: ApprovalRequest[];
+  taggedIds: BehaviorId[];
+};
+
+export type BehaviorTestCounts = {
+  id: BehaviorId;
+  passed: number;
+  failed: number;
+};
+
+export type TestRunRecording = {
+  runId: string;
+  counts: BehaviorTestCounts[];
+};
+
+export type RecordedResults = {
+  events: TestResultsRecordedEvent[];
+  unsubmitted: BehaviorId[];
+};
+
+export type ContractIssueInput = {
+  id: BehaviorId;
+  version: number;
+  problem: string;
+};
+
 export type EventStamp = {
   lastSeq: number;
   at: string;
@@ -112,6 +177,7 @@ export type TesterBehaviorView = BehaviorContent & {
   id: BehaviorId;
   version: number;
   status: BehaviorStatus;
+  openIssues: ContractIssue[];
 };
 
 export type ContractDiff = {
@@ -121,7 +187,7 @@ export type ContractDiff = {
   dependsOnRemoved: string[];
 };
 
-export type BehaviorChangeKind = 'added' | 'revised' | 'status_changed' | 'revision_pending';
+export type BehaviorChangeKind = 'added' | 'revised' | 'status_changed' | 'revision_pending' | 'issues_changed';
 
 export type BehaviorChange = BehaviorContent & {
   id: BehaviorId;
@@ -132,6 +198,7 @@ export type BehaviorChange = BehaviorContent & {
   status: BehaviorStatus;
   descriptionChanged: boolean;
   contractDiff: ContractDiff;
+  openIssues: ContractIssue[];
 };
 
 export type PlannerBehaviorChange = BehaviorChange & {
@@ -156,9 +223,20 @@ export type TesterDelta = DeltaWindow & {
   changes: BehaviorChange[];
 };
 
+export type TestResultNotice = TestResults & {
+  id: BehaviorId;
+  at: string;
+};
+
+export type ContractIssueNotice = ContractIssue & {
+  id: BehaviorId;
+};
+
 export type PlannerDelta = DeltaWindow & {
   changes: PlannerBehaviorChange[];
   decisions: Decision[];
+  testResults: TestResultNotice[];
+  contractIssues: ContractIssueNotice[];
 };
 
 export type LedgerSummary = Record<BehaviorStatus, number> & {

@@ -12,22 +12,30 @@ export type TempWorkspace = {
   home: string;
 };
 
+const ISOLATED_VARIABLES = ['PACTIES_HOME', 'PACTIES_CURSOR_HOME', 'PACTIES_CLAUDE_HOME', 'PACTIES_CLAUDE_BIN'] as const;
+
 export function useTempWorkspace(): () => TempWorkspace {
   let workspace: TempWorkspace | null = null;
-  const previousHome = process.env.PACTIES_HOME;
+  const previous = Object.fromEntries(ISOLATED_VARIABLES.map((name) => [name, process.env[name]]));
 
   beforeEach(async () => {
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'pacties ws-')));
     const home = path.join(root, 'pacties home ✦');
     process.env.PACTIES_HOME = home;
+    process.env.PACTIES_CURSOR_HOME = path.join(root, 'isolated cursor home');
+    process.env.PACTIES_CLAUDE_HOME = path.join(root, 'isolated claude home');
+    process.env.PACTIES_CLAUDE_BIN = path.join(root, 'no claude installed', 'claude');
     workspace = { root, home };
   });
 
   afterEach(async () => {
-    if (previousHome === undefined) {
-      delete process.env.PACTIES_HOME;
-    } else {
-      process.env.PACTIES_HOME = previousHome;
+    for (const name of ISOLATED_VARIABLES) {
+      const value = previous[name];
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
     }
     if (workspace !== null) {
       await fs.rm(workspace.root, { recursive: true, force: true });

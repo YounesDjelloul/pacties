@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import { readGitFacts } from '@/data/git';
+import { readGitFacts, readRepoRoot } from '@/data/git';
 import { readProjectRecords, writeProjectRecord } from '@/data/project-files';
 import { readRepoIndex, writeRepoIndex } from '@/data/repo-index';
 import { withHomeLock } from '@/data/storage-lock';
@@ -9,7 +9,7 @@ import { ValidationError } from '@/lib/errors';
 import type { Project, ProjectRecord } from '@/domain/project/types';
 
 export async function resolveProject(repoPath: string, now: Date): Promise<Project> {
-  const facts = await readGitFacts(repoPath);
+  const [facts, repoRoot] = await Promise.all([readGitFacts(repoPath), readRepoRoot(repoPath)]);
   if (facts === null) {
     throw new ValidationError(`pacties needs a git repository, but ${repoPath} is not inside one; run "git init" there first`);
   }
@@ -35,6 +35,12 @@ export async function resolveProject(repoPath: string, now: Date): Promise<Proje
 
     const dir = projectDirFor(identity.repoId);
     await fs.mkdir(dir, { recursive: true });
-    return { repoId: identity.repoId, name: existing?.name ?? identity.name, dir, rootCommit: identity.rootCommit };
+    return {
+      repoId: identity.repoId,
+      name: existing?.name ?? identity.name,
+      dir,
+      rootCommit: identity.rootCommit,
+      repoRoot: repoRoot ?? facts.commonDir,
+    };
   });
 }

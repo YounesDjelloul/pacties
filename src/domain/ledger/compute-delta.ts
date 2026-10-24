@@ -8,11 +8,13 @@ import type {
   Behavior,
   BehaviorChange,
   BehaviorChangeKind,
+  ContractIssueNotice,
   Decision,
   LedgerEvent,
   PendingRevision,
   PlannerBehaviorChange,
   PlannerDelta,
+  TestResultNotice,
   TesterBehaviorView,
   TesterDelta,
 } from '@/domain/ledger/types';
@@ -65,6 +67,8 @@ export function computePlannerDelta(events: LedgerEvent[], cursor: number): Resu
     resync: inputs.resync,
     changes,
     decisions: inputs.since.flatMap(toDecision),
+    testResults: inputs.since.flatMap(toTestResultNotice),
+    contractIssues: inputs.since.flatMap(toContractIssueNotice),
   });
 }
 
@@ -82,7 +86,7 @@ function splitAtCursor(events: LedgerEvent[], cursor: number): DeltaInputs {
 }
 
 function describeChange(previous: TesterBehaviorView | null, current: TesterBehaviorView): BehaviorChange | null {
-  const kind = classifyChange(previous, current);
+  const kind = classifyChange(previous, current) ?? (issuesChanged(previous, current) ? 'issues_changed' : null);
   return kind === null ? null : buildChange(kind, previous, current);
 }
 
@@ -107,6 +111,10 @@ function classifyChange(previous: TesterBehaviorView | null, current: TesterBeha
   return null;
 }
 
+function issuesChanged(previous: TesterBehaviorView | null, current: TesterBehaviorView): boolean {
+  return (previous?.openIssues.length ?? 0) !== current.openIssues.length;
+}
+
 function buildChange(kind: BehaviorChangeKind, previous: TesterBehaviorView | null, current: TesterBehaviorView): BehaviorChange {
   return {
     id: current.id,
@@ -119,6 +127,7 @@ function buildChange(kind: BehaviorChangeKind, previous: TesterBehaviorView | nu
     contract: current.contract,
     descriptionChanged: previous?.description !== current.description,
     contractDiff: diffContracts(previous?.contract ?? null, current.contract),
+    openIssues: current.openIssues,
   };
 }
 
@@ -138,4 +147,18 @@ function toDecision(event: LedgerEvent): Decision[] {
     default:
       return [];
   }
+}
+
+function toTestResultNotice(event: LedgerEvent): TestResultNotice[] {
+  if (event.type !== 'test_results_recorded') {
+    return [];
+  }
+  return [{ id: event.behaviorId, version: event.version, runId: event.runId, passed: event.passed, failed: event.failed, at: event.at }];
+}
+
+function toContractIssueNotice(event: LedgerEvent): ContractIssueNotice[] {
+  if (event.type !== 'contract_issue_reported') {
+    return [];
+  }
+  return [{ id: event.behaviorId, version: event.version, problem: event.problem, at: event.at }];
 }

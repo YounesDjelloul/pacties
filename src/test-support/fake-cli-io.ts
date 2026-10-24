@@ -6,7 +6,10 @@ export type FakeCliIo = CliIo & {
   prompts: string[];
 };
 
-export function fakeCliIo(cwd: string, options: { interactive: boolean; answer?: boolean; choose?: (choices: Choice[]) => string[] }): FakeCliIo {
+export function fakeCliIo(
+  cwd: string,
+  options: { interactive: boolean; answer?: boolean; choose?: (choices: Choice[]) => string[]; stdin?: string },
+): FakeCliIo {
   const out: string[] = [];
   const err: string[] = [];
   const prompts: string[] = [];
@@ -24,6 +27,8 @@ export function fakeCliIo(cwd: string, options: { interactive: boolean; answer?:
       return options.choose?.(choices) ?? choices.filter((choice) => choice.checked).map((choice) => choice.value);
     },
     now: () => new Date('2026-10-25T01:59:59.500Z'),
+    readStdin: async () => options.stdin ?? '',
+    selfLauncher: { command: '/opt/node 26/bin/node', args: ['/opt/pacties é/dist/cli/index.js'] },
     output: () => out.join('\n'),
     errors: () => err.join('\n'),
     prompts,

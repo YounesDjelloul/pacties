@@ -27,6 +27,7 @@ describe('testerView', () => {
           interface: ['POST /transfer { from_id, to_id, amount }', '-> 429 { error: "DAILY_LIMIT_EXCEEDED", remaining }'],
           dependsOn: ['get_daily_total(user_id) -> int'],
         },
+        openIssues: [],
       },
     ]);
   });

@@ -18,3 +18,22 @@ export type StdioServerEntry = {
   command: string;
   args: string[];
 };
+
+export type TesterSessionInput = {
+  repoRoot: string;
+  worktrees: string[];
+  privatePaths: string[];
+  launcher: Launcher;
+  guardFile: string;
+};
+
+export type TesterSessionFiles = {
+  settings: Record<string, unknown>;
+  mcpConfig: Record<string, unknown>;
+  guard: { guarded: string[] };
+};
+
+export type GuardDecision = {
+  blocked: boolean;
+  reason: string | null;
+};
