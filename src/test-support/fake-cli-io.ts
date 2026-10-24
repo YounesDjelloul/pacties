@@ -29,6 +29,9 @@ export function fakeCliIo(
     now: () => new Date('2026-10-25T01:59:59.500Z'),
     readStdin: async () => options.stdin ?? '',
     selfLauncher: { command: '/opt/node 26/bin/node', args: ['/opt/pacties é/dist/cli/index.js'] },
+    terminal: () => {
+      throw new Error('fake CLI io has no terminal');
+    },
     output: () => out.join('\n'),
     errors: () => err.join('\n'),
     prompts,

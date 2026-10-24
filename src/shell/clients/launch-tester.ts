@@ -3,7 +3,7 @@ import { readClaudeUserSettings, runClaudeSession } from '@/data/claude-cli';
 import { listWorktreePaths } from '@/data/git';
 import { withRunLock } from '@/data/storage-lock';
 import { projectsRoot, repoIndexPath, testerSessionDir } from '@/data/storage-paths';
-import { readGuardFile, writeTesterSessionFile } from '@/data/testing-files';
+import { readGuardFile, writeSessionFile } from '@/data/testing-files';
 import { buildTesterClaudeArgs, buildTesterSessionFiles, decideGuard, findUnsafeUserSettings } from '@/domain/clients/tester-session';
 import { config } from '@/lib/config';
 import { ValidationError } from '@/lib/errors';
@@ -20,8 +20,21 @@ export type TesterLaunch = {
   exitCode: number;
 };
 
+export type TesterSession = {
+  settingsFile: string;
+  mcpConfigFile: string;
+  workspace: string;
+  sync: SyncReport;
+};
+
 export async function launchTester(repoPath: string, launcher: Launcher, now: Date): Promise<TesterLaunch> {
   const project = await resolveProject(repoPath, now);
+  const session = await prepareTesterSession(project, launcher);
+  const exitCode = await runClaudeSession(buildTesterClaudeArgs(session.settingsFile, session.mcpConfigFile), session.workspace);
+  return { project, workspace: session.workspace, sync: session.sync, exitCode };
+}
+
+export async function prepareTesterSession(project: Project, launcher: Launcher): Promise<TesterSession> {
   const problems = findUnsafeUserSettings(await readClaudeUserSettings());
   if (problems.length > 0) {
     throw new ValidationError(`The tester sandbox cannot be enforced while your Claude Code settings contain ${problems.join('; ')}. Remove it from ${path.join(config.claudeHome, 'settings.json')} and try again.`);
@@ -47,14 +60,12 @@ export async function launchTester(repoPath: string, launcher: Launcher, now: Da
   });
 
   await withRunLock(project.dir, async (lock) => {
-    await writeTesterSessionFile(project.dir, settingsFile, files.settings, lock);
-    await writeTesterSessionFile(project.dir, mcpConfigFile, files.mcpConfig, lock);
-    await writeTesterSessionFile(project.dir, guardFile, files.guard, lock);
+    await writeSessionFile(project.dir, settingsFile, files.settings, lock);
+    await writeSessionFile(project.dir, mcpConfigFile, files.mcpConfig, lock);
+    await writeSessionFile(project.dir, guardFile, files.guard, lock);
   });
 
-  const workspace = testerWorkspaceDir(project);
-  const exitCode = await runClaudeSession(buildTesterClaudeArgs(settingsFile, mcpConfigFile), workspace);
-  return { project, workspace, sync, exitCode };
+  return { settingsFile, mcpConfigFile, workspace: testerWorkspaceDir(project), sync };
 }
 
 export async function checkTesterToolUse(guardFile: string, hookInput: unknown): Promise<GuardDecision> {

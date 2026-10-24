@@ -256,6 +256,31 @@ describe('pacties CLI', () => {
     });
   });
 
+  it('prints help instead of opening the wrapper outside an interactive terminal', async () => {
+    await createTempProject(workspace());
+    const io = fakeCliIo(repoOf(), { interactive: false });
+    expect(await runCli([], io)).toBe(0);
+    expect(io.output()).toContain('Usage: pacties [options] [command]');
+    expect(io.output().replace(/\s+/gu, ' ')).toContain('Run it with no command to open the planner, the tester and approvals in one terminal.');
+  });
+
+  it('records planner activity and session from the planner hooks and never fails the hook', async () => {
+    const file = path.join(workspace().root, 'planner session ✦', 'report.json');
+    const stdin = JSON.stringify({ session_id: '5e1f-é', hook_event_name: 'Stop', transcript_path: '/x' });
+    expect(await runCli(['hook', 'planner-state', file, 'idle'], fakeCliIo(workspace().root, { interactive: false, stdin }))).toBe(0);
+    expect(JSON.parse(await fs.readFile(file, 'utf8'))).toEqual({ activity: 'idle', sessionId: '5e1f-é' });
+    expect(await runCli(['hook', 'planner-state', file, 'sleepy'], fakeCliIo(workspace().root, { interactive: false, stdin }))).toBe(0);
+    expect(await runCli(['hook', 'planner-state', file, 'busy'], fakeCliIo(workspace().root, { interactive: false, stdin: '{ torn' }))).toBe(0);
+    expect(JSON.parse(await fs.readFile(file, 'utf8'))).toEqual({ activity: 'busy', sessionId: null });
+  });
+
+  it('refuses --resume together with --continue', async () => {
+    await createTempProject(workspace());
+    const io = fakeCliIo(repoOf(), { interactive: true });
+    expect(await runCli(['--resume', 'abc', '--continue'], io)).toBe(1);
+    expect(io.errors()).toBe('pacties: Use either --resume or --continue, not both');
+  });
+
   describe('hook tester-guard', () => {
     const guardFileIn = async (guarded: string[]) => {
       const file = path.join(workspace().root, 'session ✦', 'guard.json');

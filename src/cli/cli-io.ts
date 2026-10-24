@@ -1,4 +1,5 @@
 import type { Launcher } from '@/domain/clients/types';
+import type { WrapperTerminal } from '@/shell/wrapper/types';
 
 export type CliIo = {
   cwd: string;
@@ -10,6 +11,7 @@ export type CliIo = {
   now: () => Date;
   readStdin: () => Promise<string>;
   selfLauncher: Launcher;
+  terminal: () => WrapperTerminal;
 };
 
 export type Choice = {

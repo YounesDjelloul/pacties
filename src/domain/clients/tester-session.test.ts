@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildTesterClaudeArgs, buildTesterSessionFiles, decideGuard, findUnsafeUserSettings, guardedPaths } from '@/domain/clients/tester-session';
+import { buildTesterClaudeArgs, buildTesterJobArgs, buildTesterSessionFiles, decideGuard, findUnsafeUserSettings, guardedPaths } from '@/domain/clients/tester-session';
 import type { TesterSessionInput } from '@/domain/clients/types';
 
 const input: TesterSessionInput = {
@@ -85,6 +85,19 @@ describe('buildTesterClaudeArgs', () => {
     expect(args.slice(0, 5)).toEqual(['--settings', '/s/settings.json', '--strict-mcp-config', '--mcp-config', '/s/mcp.json']);
     expect(args[5]).toBe('--append-system-prompt');
     expect(args[6]).toContain('You are the pacties tester.');
+  });
+});
+
+describe('buildTesterJobArgs', () => {
+  it('runs headless with streamed JSON, the tester settings and MCP config, auto-accepted edits and the tester tools', () => {
+    const args = buildTesterJobArgs('/s é/settings.json', '/s é/mcp.json', 'New approved behaviors need tests: B10 v2.', null);
+    expect(args.slice(0, 5)).toEqual(['-p', 'New approved behaviors need tests: B10 v2.', '--output-format', 'stream-json', '--verbose']);
+    expect(args).toEqual(expect.arrayContaining(['--settings', '/s é/settings.json', '--strict-mcp-config', '--mcp-config', '/s é/mcp.json']));
+    expect(args.slice(-4)).toEqual(['--permission-mode', 'acceptEdits', '--allowedTools', 'mcp__pacties-tester']);
+  });
+
+  it('resumes the previous tester session when there is one', () => {
+    expect(buildTesterJobArgs('/s', '/m', 'p', '0f9c-session').slice(-2)).toEqual(['--resume', '0f9c-session']);
   });
 });
 

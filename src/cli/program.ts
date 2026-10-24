@@ -2,11 +2,12 @@ import path from 'node:path';
 import { Command, CommanderError, Option } from 'commander';
 import { approveCommand } from '@/cli/commands/approve';
 import { conflictsCommand, resolveCommand } from '@/cli/commands/conflicts';
-import { testerGuardCommand } from '@/cli/commands/hook';
+import { plannerStateCommand, testerGuardCommand } from '@/cli/commands/hook';
 import { initCommand } from '@/cli/commands/init';
 import { listCommand } from '@/cli/commands/list';
 import { rejectCommand } from '@/cli/commands/reject';
 import { showCommand } from '@/cli/commands/show';
+import { wrapperCommand } from '@/cli/commands/wrapper';
 import { testerCommand } from '@/cli/commands/tester';
 import { ROLES } from '@/domain/ledger/constants';
 import { AppError } from '@/lib/errors';
@@ -29,11 +30,17 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
 }
 
 function buildProgram(io: CliIo, exit: { code: number }): Command {
-  const program = new Command('pacties')
-    .description('Coordinate coding agents on one repo through a shared behavior ledger')
+  const program: Command = new Command('pacties')
+    .description('Coordinate coding agents on one repo through a shared behavior ledger. Run it with no command to open the planner, the tester and approvals in one terminal.')
     .version(PACTIES_VERSION)
     .exitOverride()
-    .configureOutput({ writeOut: (text) => io.out(text.trimEnd()), writeErr: (text) => io.err(text.trimEnd()) });
+    .configureOutput({ writeOut: (text) => io.out(text.trimEnd()), writeErr: (text) => io.err(text.trimEnd()) })
+    .addOption(new Option('--repo <path>', 'repository to work on').default(io.cwd, 'current directory'))
+    .option('-r, --resume [sessionId]', 'resume a planner session (and its paired tester); without an id, pick one in Claude')
+    .option('-c, --continue', 'continue the most recent planner session (and its paired tester)')
+    .action(async (options: { repo: string; resume?: string | boolean; continue?: boolean }) => {
+      exit.code = await wrapperCommand(io, path.resolve(io.cwd, options.repo), options, program.helpInformation().trimEnd());
+    });
 
   const repoOption = () => new Option('--repo <path>', 'repository to work on').default(io.cwd, 'current directory');
   const repoPath = (options: { repo: string }) => path.resolve(io.cwd, options.repo);
@@ -99,12 +106,19 @@ function buildProgram(io: CliIo, exit: { code: number }): Command {
       exit.code = await testerCommand(io, repoPath(options));
     });
 
-  program
-    .command('hook', { hidden: true })
+  const hook = program.command('hook', { hidden: true });
+  hook
     .command('tester-guard')
     .argument('<guardFile>')
     .action(async (guardFile: string) => {
       exit.code = await testerGuardCommand(io, guardFile);
+    });
+  hook
+    .command('planner-state')
+    .argument('<activityFile>')
+    .argument('<activity>')
+    .action(async (activityFile: string, activity: string) => {
+      exit.code = await plannerStateCommand(io, activityFile, activity);
     });
 
   program

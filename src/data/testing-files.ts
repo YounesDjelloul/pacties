@@ -71,7 +71,7 @@ export async function readJunitReport(projectDir: string, runId: string): Promis
   }
 }
 
-export async function writeTesterSessionFile(projectDir: string, filePath: string, value: unknown, lock: StorageLock): Promise<void> {
+export async function writeSessionFile(projectDir: string, filePath: string, value: unknown, lock: StorageLock): Promise<void> {
   assertLockHeld(lock, projectDir);
   await writeJsonFileAtomically(filePath, value);
 }
@@ -79,4 +79,15 @@ export async function writeTesterSessionFile(projectDir: string, filePath: strin
 export async function readGuardFile(filePath: string): Promise<string[] | null> {
   const guard = await readJsonFile(filePath, z.object({ guarded: z.array(z.string()) }));
   return guard?.guarded ?? null;
+}
+
+const sessionPairsSchema = z.record(z.string(), z.string());
+
+export async function readSessionPairs(projectDir: string): Promise<Record<string, string>> {
+  return (await readJsonFile(path.join(projectDir, 'session-pairs.json'), sessionPairsSchema)) ?? {};
+}
+
+export async function writeSessionPairs(projectDir: string, pairs: Record<string, string>, lock: StorageLock): Promise<void> {
+  assertLockHeld(lock, projectDir);
+  await writeJsonFileAtomically(path.join(projectDir, 'session-pairs.json'), pairs);
 }

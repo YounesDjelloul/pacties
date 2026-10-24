@@ -1,6 +1,7 @@
 import { SERVER_NAME_PREFIX } from '@/domain/clients/constants';
 import { toStdioEntry } from '@/domain/clients/server-specs';
-import type { GuardDecision, Launcher, TesterSessionFiles, TesterSessionInput } from '@/domain/clients/types';
+import { shellCommand } from '@/domain/clients/shell-command';
+import type { GuardDecision, TesterSessionFiles, TesterSessionInput } from '@/domain/clients/types';
 
 export const TESTER_SERVER_NAME = `${SERVER_NAME_PREFIX}tester`;
 
@@ -48,6 +49,22 @@ export function buildTesterClaudeArgs(settingsFile: string, mcpConfigFile: strin
   return ['--settings', settingsFile, '--strict-mcp-config', '--mcp-config', mcpConfigFile, '--append-system-prompt', TESTER_SYSTEM_PROMPT];
 }
 
+export function buildTesterJobArgs(settingsFile: string, mcpConfigFile: string, prompt: string, sessionId: string | null): string[] {
+  return [
+    '-p',
+    prompt,
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    ...buildTesterClaudeArgs(settingsFile, mcpConfigFile),
+    '--permission-mode',
+    'acceptEdits',
+    '--allowedTools',
+    `mcp__${TESTER_SERVER_NAME}`,
+    ...(sessionId === null ? [] : ['--resume', sessionId]),
+  ];
+}
+
 export function decideGuard(toolInput: unknown, guarded: string[]): GuardDecision {
   const texts = collectStrings(toolInput).map(comparable);
   const hit = guarded.find((path) => texts.some((text) => text.includes(comparable(path))));
@@ -91,6 +108,3 @@ function stripTrailingSlashes(path: string): string {
   return path.replace(/\/+$/u, '');
 }
 
-function shellCommand(launcher: Launcher, args: string[]): string {
-  return [launcher.command, ...launcher.args, ...args].map((part) => `'${part.split("'").join(String.raw`'\''`)}'`).join(' ');
-}
