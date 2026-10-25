@@ -29,7 +29,7 @@ export function buildTesterJobPrompt(requests: ApprovalRequest[]): string {
 export function parseStreamLine(line: string): StreamEvent | null {
   const message = parseObject(line);
   if (message === null) {
-    return line.trim().length === 0 ? null : { kind: 'log', entry: { kind: 'error', text: shorten(line) } };
+    return line.trim().length === 0 ? null : { kind: 'log', entry: { kind: 'error', text: line.trim() } };
   }
 
   if (message['type'] === 'system' && typeof message['session_id'] === 'string') {
@@ -37,11 +37,11 @@ export function parseStreamLine(line: string): StreamEvent | null {
   }
   if (message['type'] === 'result') {
     const isError = message['is_error'] === true;
-    const text = typeof message['result'] === 'string' ? message['result'] : String(message['subtype'] ?? 'finished');
+    const errorText = typeof message['result'] === 'string' ? message['result'] : String(message['subtype'] ?? 'failed');
     return {
       kind: 'result',
       sessionId: typeof message['session_id'] === 'string' ? message['session_id'] : null,
-      entry: { kind: isError ? 'error' : 'result', text: shorten(text) },
+      entry: isError ? { kind: 'error', text: errorText.trim() } : { kind: 'result', text: 'Tester job finished' },
     };
   }
   if (message['type'] === 'assistant') {
@@ -61,7 +61,7 @@ function assistantEntry(payload: unknown): JobLogEntry | null {
       return { kind: 'tool', text: shorten(`${toolLabel(block['name'])} ${describeInput(block['input'])}`.trim()) };
     }
     if (block['type'] === 'text' && typeof block['text'] === 'string' && block['text'].trim().length > 0) {
-      return { kind: 'text', text: shorten(block['text']) };
+      return { kind: 'text', text: block['text'].trim() };
     }
   }
   return null;

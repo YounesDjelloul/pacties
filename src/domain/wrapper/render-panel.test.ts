@@ -43,6 +43,48 @@ describe('renderPanel', () => {
     expect(lines.some((line) => line.includes('#1 '))).toBe(false);
   });
 
+  it('wraps every line of a long tester message under its marker instead of cutting it', () => {
+    const log = [
+      { kind: 'tool' as const, text: `Bash git rev-parse --show-toplevel ${'x'.repeat(80)}` },
+      { kind: 'text' as const, text: 'Blocked: get_delta fails for Zoë.\r\n\n- B10 needs get_daily_total(user_id)' },
+      { kind: 'error' as const, text: 'Tester job stopped (exit code 1): MCP server failed' },
+    ];
+    const lines = renderPanel(state({ reviews: [], job: { ...initialWrapperState().job, log } }), 30, 30);
+    expect(lines.slice(-8)).toEqual([
+      '  › Bash git rev-parse --show…',
+      '  · Blocked: get_delta fails',
+      '    for Zoë.',
+      '    ',
+      '    - B10 needs',
+      '    get_daily_total(user_id)',
+      '  ✗ Tester job stopped (exit',
+      '    code 1): MCP server failed',
+    ]);
+  });
+
+  it('wraps a long review under its tick box', () => {
+    const long = { ...proposal, description: 'transfer over the daily limit of 10 000,01 € returns 429 for Zoë' };
+    const lines = renderPanel(state({ reviews: [long] }), 40, 30);
+    expect(lines).toContain('> [x] B10 v1  new       transfer over');
+    expect(lines).toContain('      the daily limit of 10 000,01 €');
+    expect(lines).toContain('      returns 429 for Zoë');
+  });
+
+  it('shows earlier log rows when scrolled up, never past the first row, and says how to get back', () => {
+    const log = Array.from({ length: 12 }, (_, index) => ({ kind: 'tool' as const, text: `run_tests #${index + 1}` }));
+    const base = state({ reviews: [], job: { ...initialWrapperState().job, log } });
+    const following = renderPanel(base, 80, 10);
+    expect(following).toContain('Tester: idle  (PgUp/PgDn scroll)');
+    expect(following.at(-1)).toBe('  › run_tests #12');
+
+    const scrolled = renderPanel({ ...base, logScroll: 3 }, 80, 10);
+    expect(scrolled).toContain('Tester: idle  (scrolled up · PgDn/End for latest)');
+    expect(scrolled.at(-1)).toBe('  › run_tests #9');
+
+    const pastTop = renderPanel({ ...base, logScroll: 99 }, 80, 10);
+    expect(pastTop.slice(-6)).toEqual(['Tester: idle  (scrolled up · PgDn/End for latest)', '  › run_tests #1', '  › run_tests #2', '  › run_tests #3', '  › run_tests #4', '  › run_tests #5']);
+  });
+
   it('says when nothing awaits approval and warns about a blocked run', () => {
     const ledger = { ...ledgerOf(proposeMany([], 1)), lastRun: { runId: 'r', role: 'tester' as const, status: 'blocked' as const, paths: ['src/a é.test.ts'], at: 'x' } };
     const lines = renderPanel(state({ reviews: [], ledger }), 120, 30);

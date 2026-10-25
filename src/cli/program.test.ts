@@ -167,6 +167,15 @@ describe('pacties CLI', () => {
       expect(io.output()).toMatch(/B2\s+approved\s+v1\s+refund requested 31 days after purchase is refused/u);
     });
 
+    it('works on the --repo given after the command, not on the current directory', async () => {
+      const project = await createTempProject(workspace());
+      await proposeBehavior(project, refundOutsideWindow, T);
+      const io = fakeCliIo(workspace().root, { interactive: false });
+
+      expect(await runCli(['list', '--repo', 'Zahlungs Dienst é/'], io)).toBe(0);
+      expect(io.output()).toMatch(/B1\s+planned\s+v1\s+refund requested 31 days after purchase is refused/u);
+    });
+
     it('rejects an unknown status filter with the valid ones', async () => {
       await createTempProject(workspace());
       const io = fakeCliIo(repoOf(), { interactive: false });

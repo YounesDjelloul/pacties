@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { readEvents } from '@/data/event-log';
-import { createTerminalMirror } from '@/data/terminal-mirror';
 import { spawnPseudoTerminal } from '@/data/pty';
+import { createTerminalMirror } from '@/data/terminal-mirror';
 import { withRunLock } from '@/data/storage-lock';
 import { eventsPath } from '@/data/storage-paths';
 import { readSessionPairs, writeSessionFile, writeSessionPairs } from '@/data/testing-files';
@@ -12,6 +12,7 @@ import { pendingReviews } from '@/domain/ledger/review';
 import { splitInput } from '@/domain/wrapper/keys';
 import { renderPanel } from '@/domain/wrapper/render-panel';
 import { statusLine } from '@/domain/wrapper/status-line';
+import { INITIAL_PLANNER_MODES, pauseInputModes, restoreModes, terminalTitle, trackPlannerModes, usesAlternateScreen } from '@/domain/wrapper/terminal-modes';
 import { initialWrapperState, latestPlannerNewsSeq, reduceWrapper } from '@/domain/wrapper/wrapper-state';
 import { config } from '@/lib/config';
 import { approveBehaviors } from '@/shell/ledger/approve-behaviors';
@@ -36,17 +37,22 @@ export async function runWrapper(project: Project, launcher: Launcher, terminal:
     await writeSessionFile(project.dir, reportFile, { activity: 'busy', sessionId: knownPlannerSessionId(launch) }, lock);
   });
 
-  const plannerRows = () => Math.max(1, terminal.rows() - 1);
-  const planner = spawnPseudoTerminal(config.claudeBin, buildPlannerClaudeArgs(settingsFile, launch), project.repoRoot, terminal.columns(), plannerRows(), process.env);
-  const mirror = createTerminalMirror(terminal.columns(), plannerRows());
+  const planner = spawnPseudoTerminal(config.claudeBin, buildPlannerClaudeArgs(settingsFile, launch), project.repoRoot, terminal.columns(), terminal.rows(), process.env);
+  const mirror = createTerminalMirror(terminal.columns(), terminal.rows());
 
   const jobs = new AbortController();
   let state: WrapperState = initialWrapperState(knownPlannerSessionId(launch), await readSessionPairs(project.dir));
-  let shownScreen: Screen | null = null;
+  let shownScreen: Screen = 'planner';
+  let plannerModes = INITIAL_PLANNER_MODES;
+  let panelOverPlannerScreen = false;
+  let hiddenOutput: string[] = [];
+  let shownTitle = '';
   let finish: (code: number) => void = () => undefined;
   const finished = new Promise<number>((resolve) => {
     finish = resolve;
   });
+
+  const panelSize = () => ({ width: terminal.columns(), height: Math.max(1, terminal.rows() - 1) });
 
   const dispatch = (event: WrapperEvent) => {
     const transition = reduceWrapper(state, event);
@@ -77,24 +83,51 @@ export async function runWrapper(project: Project, launcher: Launcher, terminal:
     dispatch({ kind: report.activity === 'idle' ? 'planner_idle' : 'planner_busy' });
   };
 
-  const drawStatus = () => {
-    terminal.write(`${ESC}7${ESC}[${terminal.rows()};1H${ESC}[2K${ESC}[7m${statusLine(state, terminal.columns())}${ESC}[0m${ESC}8`);
+  const updateTitle = () => {
+    const title = statusLine(state, 200);
+    if (title !== shownTitle) {
+      shownTitle = title;
+      terminal.write(terminalTitle(title));
+    }
+  };
+
+  const drawPanel = () => {
+    const rows = terminal.rows();
+    const size = panelSize();
+    const lines = renderPanel(state, size.width, size.height);
+    terminal.write(`${ESC}[?25l${ESC}[H${ESC}[2J${lines.join('\r\n')}${ESC}[${rows};1H${ESC}[7m${statusLine(state, terminal.columns())}${ESC}[0m`);
+  };
+
+  const showPanel = () => {
+    if (shownScreen !== 'pacties') {
+      panelOverPlannerScreen = usesAlternateScreen(plannerModes);
+      terminal.write(panelOverPlannerScreen ? pauseInputModes(plannerModes) : `${ESC}[?1049h`);
+    }
+    shownScreen = 'pacties';
+    drawPanel();
+  };
+
+  const showPlanner = async () => {
+    shownScreen = 'planner';
+    const replay = hiddenOutput.join('');
+    hiddenOutput = [];
+    if (panelOverPlannerScreen) {
+      const screen = await mirror.snapshot();
+      terminal.write(`${ESC}[0m${ESC}[H${ESC}[2J${screen}${restoreModes(plannerModes)}`);
+      return;
+    }
+    terminal.write(`${ESC}[?25h${ESC}[?1049l${replay}`);
   };
 
   const render = async () => {
+    updateTitle();
     if (state.screen === 'pacties') {
-      const lines = renderPanel(state, terminal.columns(), plannerRows());
-      terminal.write(`${ESC}[?25l${ESC}[H${ESC}[2J${lines.join('\r\n')}`);
-      shownScreen = 'pacties';
-      drawStatus();
+      showPanel();
       return;
     }
-    if (shownScreen !== 'planner') {
-      shownScreen = 'planner';
-      const snapshot = await mirror.snapshot();
-      terminal.write(`${ESC}[H${ESC}[2J${ESC}[1;${plannerRows()}r${ESC}[H${snapshot}${ESC}[?25h`);
+    if (shownScreen === 'pacties') {
+      await showPlanner();
     }
-    drawStatus();
   };
 
   const apply = async (effect: WrapperEffect) => {
@@ -137,14 +170,13 @@ export async function runWrapper(project: Project, launcher: Launcher, terminal:
   };
 
   terminal.start();
-  terminal.write(`${ESC}[?1049h${ESC}[H${ESC}[2J${ESC}[1;${plannerRows()}r`);
-  shownScreen = 'planner';
-
   planner.onData((data) => {
+    plannerModes = trackPlannerModes(plannerModes, data);
     mirror.write(data);
-    if (state.screen === 'planner') {
+    if (shownScreen === 'planner') {
       terminal.write(data);
-      drawStatus();
+    } else {
+      hiddenOutput.push(data);
     }
   });
   planner.onExit((exitCode) => finish(exitCode));
@@ -154,14 +186,14 @@ export async function runWrapper(project: Project, launcher: Launcher, terminal:
     }
   });
   terminal.onResize(() => {
-    planner.resize(terminal.columns(), plannerRows());
-    mirror.resize(terminal.columns(), plannerRows());
-    shownScreen = null;
-    void render();
+    planner.resize(terminal.columns(), terminal.rows());
+    mirror.resize(terminal.columns(), terminal.rows());
+    dispatch({ kind: 'panel_resized', size: panelSize() });
   });
 
   const stopWatchingLedger = watchFileChanges(eventsPath(project.dir), () => void reloadLedger());
   const stopWatchingActivity = watchFileChanges(reportFile, () => void readActivity());
+  dispatch({ kind: 'panel_resized', size: panelSize() });
   await reloadLedger();
 
   const exitCode = await finished;
@@ -169,7 +201,9 @@ export async function runWrapper(project: Project, launcher: Launcher, terminal:
   stopWatchingLedger();
   stopWatchingActivity();
   mirror.dispose();
-  terminal.write(`${ESC}[r${ESC}[?25h${ESC}[?1049l`);
+  const onPanel = (shownScreen as Screen) === 'pacties';
+  const leaveScreen = onPanel || usesAlternateScreen(plannerModes) ? `${ESC}[?1049l` : '';
+  terminal.write(`${ESC}[0m${ESC}[?1000l${ESC}[?1002l${ESC}[?1003l${ESC}[?1006l${ESC}[?1004l${ESC}[?2004l${ESC}[?25h${leaveScreen}${terminalTitle('')}`);
   terminal.stop();
   return exitCode;
 }

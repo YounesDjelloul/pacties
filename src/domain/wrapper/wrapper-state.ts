@@ -1,4 +1,5 @@
 import { readNextPanelKey } from '@/domain/wrapper/keys';
+import { logEntryRows, logViewport } from '@/domain/wrapper/render-panel';
 import { pendingTestWork, workKey } from '@/domain/wrapper/tester-job';
 import type { LedgerEvent } from '@/domain/ledger/types';
 import type { JobLogEntry, PanelKey, SessionPairs, Transition, WrapperEffect, WrapperEvent, WrapperState } from '@/domain/wrapper/types';
@@ -10,6 +11,8 @@ const MAX_LOG_ENTRIES = 500;
 export function initialWrapperState(plannerSessionId: string | null = null, pairs: SessionPairs = {}): WrapperState {
   return {
     screen: 'planner',
+    panelSize: { width: 80, height: 23 },
+    logScroll: 0,
     ledger: null,
     reviews: [],
     cursor: 0,
@@ -39,6 +42,8 @@ export function reduceWrapper(state: WrapperState, event: WrapperEvent): Transit
         return { state: { ...state, screen: state.screen === 'planner' ? 'pacties' : 'planner', confirmQuit: false }, effects: [{ kind: 'render' }] };
       }
       return state.screen === 'planner' ? typeIntoPlanner(state, event.segment.text) : onPanelInput(state, event.segment.text);
+    case 'panel_resized':
+      return { state: clampLogScroll({ ...state, panelSize: event.size }), effects: [{ kind: 'render' }] };
     case 'planner_idle':
       return settle({ ...state, planner: { ...state.planner, idle: true, typedSinceIdle: false } }, [{ kind: 'render' }]);
     case 'planner_busy':
@@ -51,8 +56,8 @@ export function reduceWrapper(state: WrapperState, event: WrapperEvent): Transit
     case 'job_event':
       return onJobEvent(state, event.event);
     case 'job_finished': {
-      const log = event.failure === null ? state.job.log : appendLog(state.job.log, { kind: 'error', text: event.failure });
-      return settle({ ...state, job: { ...state.job, running: null, log } }, [{ kind: 'render' }]);
+      const finished = { ...state, job: { ...state.job, running: null } };
+      return settle(event.failure === null ? finished : withLogEntry(finished, { kind: 'error', text: event.failure }), [{ kind: 'render' }]);
     }
     case 'action_failed':
       return { state: { ...state, message: event.message }, effects: [{ kind: 'render' }] };
@@ -102,6 +107,15 @@ function onPanelKey(state: WrapperState, key: PanelKey): Transition {
       return { state: { ...base, cursor: Math.max(0, state.cursor - 1) }, effects: [] };
     case 'down':
       return { state: { ...base, cursor: Math.min(Math.max(0, state.reviews.length - 1), state.cursor + 1) }, effects: [] };
+    case 'page_up':
+    case 'page_down': {
+      const viewport = logViewport(base);
+      const step = Math.max(1, viewport.room - 1);
+      const logScroll = key === 'page_up' ? Math.min(viewport.maxScroll, state.logScroll + step) : Math.max(0, state.logScroll - step);
+      return { state: { ...base, logScroll }, effects: [] };
+    }
+    case 'end':
+      return { state: { ...base, logScroll: 0 }, effects: [] };
     case 'tick': {
       const id = state.reviews[state.cursor]?.id;
       if (id === undefined) {
@@ -157,7 +171,7 @@ function onReasonKey(state: WrapperState, key: PanelKey): Transition {
 }
 
 function onJobEvent(state: WrapperState, event: Extract<WrapperEvent, { kind: 'job_event' }>['event']): Transition {
-  const logged = event.kind === 'session' ? state : { ...state, job: { ...state.job, log: appendLog(state.job.log, event.entry) } };
+  const logged = event.kind === 'session' ? state : withLogEntry(state, event.entry);
   const testerSessionId = event.kind === 'log' ? null : event.sessionId;
   const plannerSessionId = state.job.running?.plannerSessionId;
   if (testerSessionId === null || plannerSessionId === undefined || logged.job.pairs[plannerSessionId] === testerSessionId) {
@@ -183,16 +197,12 @@ function dispatchTesterJob(state: WrapperState): Transition {
     return { state, effects: [] };
   }
   const started: JobLogEntry = { kind: 'text', text: `Tester job started for ${work.map((request) => `${request.id} v${request.version}`).join(', ')}` };
+  const running = {
+    ...state,
+    job: { ...state.job, running: { requests: work, plannerSessionId }, dispatched: [...new Set([...state.job.dispatched, ...work.map(workKey)])] },
+  };
   return {
-    state: {
-      ...state,
-      job: {
-        ...state.job,
-        running: { requests: work, plannerSessionId },
-        dispatched: [...new Set([...state.job.dispatched, ...work.map(workKey)])],
-        log: appendLog(state.job.log, started),
-      },
-    },
+    state: withLogEntry(running, started),
     effects: [{ kind: 'start_job', requests: work, sessionId: state.job.pairs[plannerSessionId] ?? null }],
   };
 }
@@ -208,6 +218,12 @@ function nudgePlanner(state: WrapperState): Transition {
   };
 }
 
-function appendLog(log: JobLogEntry[], entry: JobLogEntry): JobLogEntry[] {
-  return [...log, entry].slice(-MAX_LOG_ENTRIES);
+function withLogEntry(state: WrapperState, entry: JobLogEntry): WrapperState {
+  const log = [...state.job.log, entry].slice(-MAX_LOG_ENTRIES);
+  const logScroll = state.logScroll === 0 ? 0 : state.logScroll + logEntryRows(entry, state.panelSize.width).length;
+  return clampLogScroll({ ...state, logScroll, job: { ...state.job, log } });
+}
+
+function clampLogScroll(state: WrapperState): WrapperState {
+  return { ...state, logScroll: Math.min(state.logScroll, logViewport(state).maxScroll) };
 }

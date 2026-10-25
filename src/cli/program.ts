@@ -34,6 +34,7 @@ function buildProgram(io: CliIo, exit: { code: number }): Command {
     .description('Coordinate coding agents on one repo through a shared behavior ledger. Run it with no command to open the planner, the tester and approvals in one terminal.')
     .version(PACTIES_VERSION)
     .exitOverride()
+    .enablePositionalOptions()
     .configureOutput({ writeOut: (text) => io.out(text.trimEnd()), writeErr: (text) => io.err(text.trimEnd()) })
     .addOption(new Option('--repo <path>', 'repository to work on').default(io.cwd, 'current directory'))
     .option('-r, --resume [sessionId]', 'resume a planner session (and its paired tester); without an id, pick one in Claude')

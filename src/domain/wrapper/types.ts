@@ -6,7 +6,7 @@ export type PlannerActivity = 'idle' | 'busy';
 
 export type InputSegment = { kind: 'toggle_screen' } | { kind: 'bytes'; text: string };
 
-export type PanelKey = 'up' | 'down' | 'tick' | 'approve' | 'reject' | 'quit' | 'enter' | 'escape' | 'backspace' | { char: string };
+export type PanelKey = 'up' | 'down' | 'page_up' | 'page_down' | 'end' | 'tick' | 'approve' | 'reject' | 'quit' | 'enter' | 'escape' | 'backspace' | { char: string };
 
 export type JobLogKind = 'text' | 'tool' | 'result' | 'error';
 
@@ -58,8 +58,15 @@ export type Rejecting = {
   reason: string;
 };
 
+export type PanelSize = {
+  width: number;
+  height: number;
+};
+
 export type WrapperState = {
   screen: Screen;
+  panelSize: PanelSize;
+  logScroll: number;
   ledger: Ledger | null;
   reviews: Review[];
   cursor: number;
@@ -74,6 +81,7 @@ export type WrapperState = {
 export type WrapperEvent =
   | { kind: 'ledger_loaded'; ledger: Ledger; reviews: Review[]; newsSeq: number }
   | { kind: 'input'; segment: InputSegment }
+  | { kind: 'panel_resized'; size: PanelSize }
   | { kind: 'planner_idle' }
   | { kind: 'planner_busy' }
   | { kind: 'planner_session'; sessionId: string }

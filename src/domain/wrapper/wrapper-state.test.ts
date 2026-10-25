@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildReview } from '@/domain/ledger/review';
+import { renderPanel } from '@/domain/wrapper/render-panel';
 import { PLANNER_NUDGE, initialWrapperState, latestPlannerNewsSeq, reduceWrapper } from '@/domain/wrapper/wrapper-state';
 import { approve, ledgerOf, propose, proposeMany, recordResults, reportIssue, submitTests } from '@/test-support/ledger-script';
 import { transferOverDailyLimit } from '@/test-support/behavior-fixtures';
@@ -210,6 +211,53 @@ describe('reduceWrapper: screens and keys', () => {
     const start = run([typed('jjjjjjjjjj ')], withReviews()).state;
     const { state } = run([load(approve(revisedPending(), 'B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11'))], start);
     expect([state.cursor, state.unticked, state.reviews]).toEqual([0, [], []]);
+  });
+});
+
+describe('reduceWrapper: scrolling the tester log', () => {
+  const pageUp = typed('\u001b[5~');
+  const pageDown = typed('\u001b[6~');
+  const end = typed('\u001b[F');
+  const logged = (text: string): WrapperEvent => ({ kind: 'job_event', event: { kind: 'log', entry: { kind: 'text', text } } });
+  const size = (width: number, height: number): WrapperEvent => ({ kind: 'panel_resized', size: { width, height } });
+  const thirty = Array.from({ length: 30 }, (_, index) => logged(`B${index + 1} covered`));
+
+  function scrolledUp(): WrapperState {
+    return run([size(80, 12), toggle, ...thirty, pageUp]).state;
+  }
+
+  it('pages up by one screen of log rows less one, and down again, never past either end', () => {
+    expect(scrolledUp().logScroll).toBe(6);
+    expect(run([pageUp, pageUp, pageUp, pageUp, pageUp], scrolledUp()).state.logScroll).toBe(23);
+    expect(run([pageDown], scrolledUp()).state.logScroll).toBe(0);
+    expect(run([pageDown, pageDown], scrolledUp()).state.logScroll).toBe(0);
+  });
+
+  it('jumps back to the latest row with End', () => {
+    expect(run([pageUp, end], scrolledUp()).state.logScroll).toBe(0);
+  });
+
+  it('keeps the rows you are reading in place while new output arrives, counting wrapped rows', () => {
+    const before = scrolledUp();
+    const after = run([logged(`B31 ${'needs more detail '.repeat(9)}`), logged('B32 covered')], before).state;
+    expect(after.logScroll).toBe(before.logScroll + 4);
+    expect(renderPanel(after, 80, 12).slice(-7)).toEqual(renderPanel(before, 80, 12).slice(-7));
+  });
+
+  it('follows new output while at the bottom', () => {
+    const { state } = run([size(80, 12), toggle, ...thirty, logged('B31 covered')]);
+    expect(state.logScroll).toBe(0);
+    expect(renderPanel(state, 80, 12).at(-1)).toBe('  · B31 covered');
+  });
+
+  it('pulls the scroll back inside the log when a resize leaves more room', () => {
+    expect(run([size(80, 40)], scrolledUp()).state.logScroll).toBe(0);
+    expect(run([size(80, 30)], scrolledUp()).state.logScroll).toBe(5);
+    expect(run([size(80, 20)], scrolledUp()).state.logScroll).toBe(6);
+  });
+
+  it('does not scroll an empty log', () => {
+    expect(run([size(80, 12), toggle, pageUp]).state.logScroll).toBe(0);
   });
 });
 

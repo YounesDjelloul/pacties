@@ -9,6 +9,12 @@ const NAMED_KEYS: Record<string, PanelKey> = {
   '\u001b[B': 'down',
   '\u001bOB': 'down',
   j: 'down',
+  '\u001b[5~': 'page_up',
+  '\u001b[6~': 'page_down',
+  '\u001b[F': 'end',
+  '\u001bOF': 'end',
+  '\u001b[4~': 'end',
+  '\u001b[8~': 'end',
   ' ': 'tick',
   '\r': 'enter',
   '\n': 'enter',
@@ -19,7 +25,7 @@ const NAMED_KEYS: Record<string, PanelKey> = {
 
 const COMMAND_KEYS: Record<string, PanelKey> = { a: 'approve', r: 'reject', q: 'quit' };
 
-const UNKNOWN_ESCAPE_SEQUENCE = /^\u001b(?:\[[0-9;?]*[ -/]*[@-~]|O[A-Za-z])/u;
+const UNKNOWN_ESCAPE_SEQUENCE = /^\u001b(?:\[[0-9;?<>=]*[ -/]*[@-~]|O[A-Za-z])/u;
 
 export function splitInput(chunk: string): InputSegment[] {
   const segments: InputSegment[] = [];

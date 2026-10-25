@@ -48,18 +48,28 @@ describe('parseStreamLine', () => {
     expect(parseStreamLine(line)).toEqual({ kind: 'log', entry: { kind: 'tool', text: 'submit_tests B2, B10' } });
   });
 
-  it('shows the file a Write touches and the first line of assistant text', () => {
+  it('shows the file a Write touches and the whole assistant text without surrounding blank lines', () => {
     const write = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Write', input: { file_path: 'src/zahlung é/__tests__/limit.test.ts', content: 'x' } }] } });
     expect(parseStreamLine(write)).toEqual({ kind: 'log', entry: { kind: 'tool', text: 'Write src/zahlung é/__tests__/limit.test.ts' } });
     const text = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: '\n\nCovering B10 first.\r\nThen B2.' }] } });
-    expect(parseStreamLine(text)).toEqual({ kind: 'log', entry: { kind: 'text', text: 'Covering B10 first.' } });
+    expect(parseStreamLine(text)).toEqual({ kind: 'log', entry: { kind: 'text', text: 'Covering B10 first.\r\nThen B2.' } });
   });
 
-  it('reads the final result, success or error, with its session id', () => {
+  it('reads the final result with its session id, without repeating the last message on success', () => {
     expect(parseStreamLine('{"type":"result","subtype":"success","is_error":false,"result":"Covered B2 and B10.\\nB9 open.","session_id":"s-1"}')).toEqual({
       kind: 'result',
       sessionId: 's-1',
-      entry: { kind: 'result', text: 'Covered B2 and B10.' },
+      entry: { kind: 'result', text: 'Tester job finished' },
+    });
+    expect(parseStreamLine('{"type":"result","subtype":"error_during_execution","is_error":true,"result":"  \\nMCP server pacties-tester failed\\r\\n","session_id":"s-2"}')).toEqual({
+      kind: 'result',
+      sessionId: 's-2',
+      entry: { kind: 'error', text: 'MCP server pacties-tester failed' },
+    });
+    expect(parseStreamLine('{"type":"result","is_error":true,"result":"B9 blocked:\\n- get_daily_total missing"}')).toEqual({
+      kind: 'result',
+      sessionId: null,
+      entry: { kind: 'error', text: 'B9 blocked:\n- get_daily_total missing' },
     });
     expect(parseStreamLine('{"type":"result","subtype":"error_max_turns","is_error":true}')).toEqual({
       kind: 'result',
@@ -76,9 +86,11 @@ describe('parseStreamLine', () => {
     expect(parseStreamLine('[1,2]')).toEqual({ kind: 'log', entry: { kind: 'error', text: '[1,2]' } });
   });
 
-  it('truncates very long entries', () => {
-    const line = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'é'.repeat(500) }] } });
-    const parsed = parseStreamLine(line);
-    expect(parsed?.kind === 'log' ? parsed.entry.text.length : 0).toBe(160);
+  it('keeps long assistant text whole but cuts a long tool call to its first line', () => {
+    const text = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'é'.repeat(500) }] } });
+    expect(parseStreamLine(text)).toEqual({ kind: 'log', entry: { kind: 'text', text: 'é'.repeat(500) } });
+    const bash = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: `ls ${'x'.repeat(300)}\nrm -rf tmp` } }] } });
+    const parsed = parseStreamLine(bash);
+    expect(parsed?.kind === 'log' ? parsed.entry.text : '').toBe(`Bash ls ${'x'.repeat(151)}…`);
   });
 });
